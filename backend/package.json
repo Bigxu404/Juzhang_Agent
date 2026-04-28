@@ -1,0 +1,37 @@
+{
+  "name": "mobile-agent-backend",
+  "version": "1.0.0",
+  "description": "Agentic backend for iOS client",
+  "main": "dist/server.js",
+  "scripts": {
+    "dev": "ts-node src/server.ts",
+    "build": "tsc",
+    "start": "node dist/server.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.33.1",
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "@pinecone-database/pinecone": "^7.2.0",
+    "@prisma/client": "^5.14.0",
+    "axios": "^1.15.2",
+    "bcryptjs": "^3.0.3",
+    "cors": "^2.8.6",
+    "dotenv": "^16.4.7",
+    "duck-duck-scrape": "^2.2.7",
+    "express": "^4.22.1",
+    "jsonwebtoken": "^9.0.3",
+    "openai": "^6.34.0",
+    "prisma": "^5.14.0",
+    "socket.io": "^4.8.1",
+    "socket.io-client": "^4.8.3"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "^3.0.0",
+    "@types/cors": "^2.8.17",
+    "@types/express": "^4.17.21",
+    "@types/jsonwebtoken": "^9.0.10",
+    "@types/node": "^22.10.1",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.7.2"
+  }
+}
