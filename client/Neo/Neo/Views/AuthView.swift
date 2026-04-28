@@ -41,7 +41,7 @@ struct AuthView: View {
                         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                         .overlay(
                             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                .stroke(AppTheme.subtleBorder, lineWidth: 1)
+                                .stroke(AppTheme.strokeLighter, lineWidth: 1)
                         )
 
                     SecureField("密码", text: $password)
@@ -51,7 +51,7 @@ struct AuthView: View {
                         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                         .overlay(
                             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                .stroke(AppTheme.subtleBorder, lineWidth: 1)
+                                .stroke(AppTheme.strokeLighter, lineWidth: 1)
                         )
 
                     if let errorMessage = errorMessage {
@@ -81,13 +81,13 @@ struct AuthView: View {
                     }) {
                         Text(isRegistering ? "已有账号？去登录" : "没有账号？去注册")
                             .font(.footnote)
-                            .foregroundColor(AppTheme.brand)
+                            .foregroundColor(AppTheme.brandOrange)
                             .fontWeight(.medium)
                     }
                     .padding(.top, 4)
                 }
                 .padding(20)
-                .cardSurface()
+                .softCard()
 
                 Spacer(minLength: 0)
             }

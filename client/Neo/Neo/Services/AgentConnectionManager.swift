@@ -4,8 +4,8 @@ import Combine
 class AgentConnectionManager: ObservableObject {
     static let shared = AgentConnectionManager()
     
-    @Published var messages: [ChatMessage] = []
-    @Published var agentState: AgentState = AgentState(status: "DISCONNECTED", description: "正在连接...")
+    @Published var messages: [UIChatMessage] = []
+    @Published var agentState: OldAgentState = OldAgentState(status: "DISCONNECTED", description: "正在连接...")
     @Published var pendingPermissionRequest: PermissionRequest? = nil
     @Published var sessions: [ChatSession] = []
     
@@ -22,7 +22,7 @@ class AgentConnectionManager: ObservableObject {
         let session = URLSession(configuration: .default)
         webSocketTask = session.webSocketTask(with: serverURL)
         webSocketTask?.resume()
-        agentState = AgentState(status: "IDLE", description: "正在连接...")
+        agentState = OldAgentState(status: "IDLE", description: "正在连接...")
         receiveMessage(token: token)
     }
     
@@ -30,7 +30,7 @@ class AgentConnectionManager: ObservableObject {
         webSocketTask?.cancel(with: .normalClosure, reason: nil)
         webSocketTask = nil
         messages.removeAll()
-        agentState = AgentState(status: "DISCONNECTED", description: "已断开连接")
+        agentState = OldAgentState(status: "DISCONNECTED", description: "已断开连接")
     }
     
     private func receiveMessage(token: String) {
@@ -39,7 +39,7 @@ class AgentConnectionManager: ObservableObject {
             case .failure(let error):
                 print("WebSocket Error: \(error)")
                 DispatchQueue.main.async {
-                    self?.agentState = AgentState(status: "ERROR", description: "连接中断，正在重试...")
+                    self?.agentState = OldAgentState(status: "ERROR", description: "连接中断，正在重试...")
                     // 如果发生错误，过 2 秒后尝试重连
                     DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
                         self?.connect(token: token)
@@ -130,8 +130,8 @@ class AgentConnectionManager: ObservableObject {
                     guard let roleStr = m["role"] as? String,
                           let content = m["content"] as? String else { return nil }
                     let role: MessageRole = roleStr == "user" ? .user : (roleStr == "system" ? .system : .agent)
-                    var newMsg = ChatMessage(role: role, content: content)
-                    newMsg.components = MessageParser.parse(content)
+                    let newMsg = UIChatMessage(text: content, type: role == .user ? .user : .agent, state: nil)
+                    // newMsg.components = MessageParser.parse(content)
                     return newMsg
                 }
             }
@@ -139,7 +139,7 @@ class AgentConnectionManager: ObservableObject {
         case "AGENT_STATE":
             guard let dict = payload as? [String: Any] else { return }
             if let status = dict["status"] as? String, let desc = dict["description"] as? String {
-                self.agentState = AgentState(status: status, description: desc)
+                self.agentState = OldAgentState(status: status, description: desc)
                 
                 // If working on a tool, append it as a tool component
                 if status == "WORKING" {
@@ -158,7 +158,7 @@ class AgentConnectionManager: ObservableObject {
             if let tool = dict["tool"] as? String, let desc = dict["desc"] as? String {
                 // Pause UI and show request
                 self.pendingPermissionRequest = PermissionRequest(tool: tool, desc: desc)
-                self.agentState = AgentState(status: "SUSPENDED", description: "等待你的授权决策...")
+                self.agentState = OldAgentState(status: "SUSPENDED", description: "等待你的授权决策...")
             }
             
         default:
@@ -167,11 +167,11 @@ class AgentConnectionManager: ObservableObject {
     }
     
     func sendMessage(_ text: String) {
-        let newMsg = ChatMessage(role: .user, content: text, components: [])
+        let newMsg = UIChatMessage(text: text, type: .user, state: nil)
         self.messages.append(newMsg)
         
         // Prepare empty agent message for streaming chunks
-        self.messages.append(ChatMessage(role: .agent, content: "", components: []))
+        self.messages.append(UIChatMessage(text: "", type: .agent, state: nil))
         
         let payload: [String: Any] = ["content": text]
         sendSocketIOEvent(event: "MESSAGE", payload: payload)
@@ -203,28 +203,28 @@ class AgentConnectionManager: ObservableObject {
         sendSocketIOEvent(event: "PERMISSION_RES", payload: payload)
         
         // Log user decision
-        self.messages.append(ChatMessage(role: .system, content: allow ? "✅ [Authorized] Allowed tool execution" : "❌ [Denied] Rejected tool execution"))
-        self.messages.append(ChatMessage(role: .agent, content: "", components: [])) // Prepare for next agent response
+        self.messages.append(UIChatMessage(text: allow ? "✅ [Authorized] Allowed tool execution" : "❌ [Denied] Rejected tool execution", type: .agent, state: nil))
+        self.messages.append(UIChatMessage(text: "", type: .agent, state: nil)) // Prepare for next agent response
     }
     
     private func appendToLastAgentMessage(_ text: String) {
-        if let lastIndex = self.messages.lastIndex(where: { $0.role == .agent }) {
-            self.messages[lastIndex].content += text
-            self.messages[lastIndex].components = MessageParser.parse(self.messages[lastIndex].content)
+        if let lastIndex = self.messages.lastIndex(where: { $0.type == .agent }) {
+            self.messages[lastIndex].text += text
+            // self.messages[lastIndex].components = MessageParser.parse(self.messages[lastIndex].text)
         } else {
-            var newMsg = ChatMessage(role: .agent, content: text)
-            newMsg.components = MessageParser.parse(text)
+            let newMsg = UIChatMessage(text: text, type: .agent, state: nil)
+            // newMsg.components = MessageParser.parse(text)
             self.messages.append(newMsg)
         }
     }
     
     private func appendToolCallToLastAgentMessage(desc: String) {
-        if let lastIndex = self.messages.lastIndex(where: { $0.role == .agent }) {
+        if let lastIndex = self.messages.lastIndex(where: { $0.type == .agent }) {
             // For now, we will just append it to the content as a system note, and the parser will pick it up if we format it nicely,
             // OR we can just inject a special tag like <tool>desc</tool> into the content so the parser handles it.
             let toolText = "\n<tool>\(desc)</tool>\n"
-            self.messages[lastIndex].content += toolText
-            self.messages[lastIndex].components = MessageParser.parse(self.messages[lastIndex].content)
+            self.messages[lastIndex].text += toolText
+            // self.messages[lastIndex].components = MessageParser.parse(self.messages[lastIndex].text)
         }
     }
 

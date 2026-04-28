@@ -26,7 +26,7 @@ enum MessageComponent: Equatable {
     case toolCall(name: String, status: ToolStatus, description: String)
 }
 
-struct AgentState: Equatable {
+struct OldAgentState: Equatable {
     var status: String
     var description: String
 }

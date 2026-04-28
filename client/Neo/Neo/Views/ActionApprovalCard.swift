@@ -43,7 +43,7 @@ struct ActionApprovalCard: View {
             }
         }
         .padding()
-        .cardSurface()
+        .softCard()
         .padding()
     }
 }
