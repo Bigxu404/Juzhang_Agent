@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Warm Gathering - Agent的故事</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,500;1,400&family=Inter:wght@300;400;500&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            /* 极简 Light Theme */
+            --bg-0: #FAF8F5; /* 更干净的宣纸白 */
+            --bg-1: #FFFFFF;
+            --text-1: #1A1A1A; /* 极致的黑 */
+            --text-2: #666666; /* 优雅的灰 */
+            --text-3: #999999;
+            --line-1: #EAE6E1;
+            --line-2: #E0DCD7;
+            --brand-1: #D96A45; /* 降低一点饱和度的砖红/暖阳色 */
+            --brand-hover: #C55836;
+            --brand-light: #F8ECE7;
+            
+            /* 质感控制 */
+            --noise-opacity: 0.03;
+            --wood-opacity: 0.02;
+        }
+
+        [data-theme="dark"] {
+            /* 极简 Dark Theme */
+            --bg-0: #121212; /* 深邃的黑 */
+            --bg-1: #1A1A1A;
+            --text-1: #F0F0F0;
+            --text-2: #A0A0A0;
+            --text-3: #666666;
+            --line-1: #2A2A2A;
+            --line-2: #3A3A3A;
+            --brand-1: #D96A45;
+            --brand-hover: #E57D5A;
+            --brand-light: #3D2218;
+            
+            /* 质感控制 */
+            --noise-opacity: 0.05;
+            --wood-opacity: 0.04;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", sans-serif;
+            background-color: var(--bg-0);
+            color: var(--text-1);
+            line-height: 1.8; 
+            letter-spacing: 0.02em;
+            transition: background-color 0.8s ease, color 0.8s ease;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+            overflow-x: hidden;
+            scroll-behavior: smooth;
+        }
+
+        /* 1. 隐蔽的材质与光影层 */
+        .texture-overlay {
+            position: fixed; top: 0; left: 0; right: 0; bottom: 0; pointer-events: none; z-index: 9998;
+            background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
+            opacity: var(--noise-opacity);
+        }
+        
+        .wood-texture {
+            position: fixed; top: 0; left: 0; right: 0; bottom: 0; pointer-events: none; z-index: -2;
+            background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 400 400' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='woodFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.01 0.2' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23woodFilter)' opacity='0.5'/%3E%3C/svg%3E");
+            opacity: var(--wood-opacity); mix-blend-mode: multiply;
+        }
+        [data-theme="dark"] .wood-texture { mix-blend-mode: color-dodge; }
+
+        /* 基础排版与容器 */
+        .container { max-width: 1040px; margin: 0 auto; padding: 0 40px; }
+
+        /* 导航 */
+        header {
+            position: fixed; top: 0; width: 100%; height: 96px; display: flex; align-items: center; z-index: 100;
+            transition: all 0.4s ease;
+        }
+        header.scrolled { 
+            height: 80px;
+            background-color: color-mix(in srgb, var(--bg-0) 90%, transparent); 
+            backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+            border-bottom: 1px solid var(--line-1);
+        }
+        .header-inner { display: flex; justify-content: space-between; align-items: center; width: 100%; }
+        
+        .logo {
+            font-family: 'Playfair Display', serif; font-size: 20px; font-weight: 500; font-style: italic;
+            color: var(--text-1); text-decoration: none; letter-spacing: 0.02em;
+        }
+
+        .nav-links { display: flex; gap: 40px; align-items: center; }
+        .nav-links a { color: var(--text-2); text-decoration: none; font-size: 13px; font-weight: 400; letter-spacing: 0.05em; transition: color 0.3s ease; }
+        .nav-links a:hover { color: var(--text-1); }
+        
+        .theme-toggle { 
+            width: 14px; height: 14px; border-radius: 50%; background-color: var(--text-1); 
+            border: none; cursor: pointer; transition: transform 0.3s ease, background-color 0.3s ease; opacity: 0.4;
+        }
+        .theme-toggle:hover { opacity: 0.8; transform: scale(1.15); }
+        [data-theme="dark"] .theme-toggle { background-color: var(--text-2); }
+
+        /* ------------------ 文章页面特有排版 ------------------ */
+        .article-section {
+            padding: 180px 0 120px;
+            position: relative;
+        }
+
+        .article-container {
+            max-width: 680px; /* 控制极佳的单行阅读宽度 */
+            margin: 0 auto;
+        }
+
+        .back-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 13px;
+            color: var(--text-3);
+            text-decoration: none;
+            margin-bottom: 48px;
+            transition: color 0.3s ease;
+            letter-spacing: 0.05em;
+        }
+        .back-link:hover { color: var(--brand-1); }
+
+        /* 文章标题区 */
+        .article-header {
+            margin-bottom: 36px; /* 减小标题和正文的间距 */
+            text-align: center;
+        }
+        .article-header h1 {
+            font-size: 32px; /* 标题字号调小一点以匹配正文的缩小 */
+            font-weight: 500;
+            color: var(--text-2); /* 标题颜色改成偏灰的 text-2 */
+            margin-bottom: 0;
+            letter-spacing: -0.01em;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif;
+        }
+
+        /* 小说正文排版（衬线体、大行距、首行缩进） */
+        .article-body {
+            font-family: "Songti SC", "STSong", "Noto Serif CJK SC", serif;
+        }
+        .article-body p {
+            font-size: 15.5px; /* 字号调小 */
+            line-height: 2.0;  /* 行距调小 */
+            color: var(--text-1);
+            margin-bottom: 22px; /* 段落间距调小 */
+            text-indent: 2em;
+            text-align: justify;
+            letter-spacing: 0.02em;
+        }
+        .article-body p:last-child {
+            margin-bottom: 0;
+        }
+
+        /* 结尾分割线 */
+        .article-end {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            margin: 80px 0;
+            color: var(--line-2);
+            font-size: 24px;
+            letter-spacing: 24px;
+        }
+
+        /* Footer */
+        footer { 
+            padding: 80px 0; 
+            display: flex; justify-content: space-between; align-items: center; 
+            border-top: 1px solid var(--line-1); 
+            position: relative; z-index: 10; background-color: var(--bg-0);
+        }
+        .footer-links { display: flex; gap: 32px; }
+        .footer-links a { color: var(--text-3); text-decoration: none; font-size: 12px; letter-spacing: 0.05em; text-transform: uppercase; transition: color 0.3s; }
+        .footer-links a:hover { color: var(--text-1); }
+
+        @media (max-width: 768px) {
+            header { display: none; } 
+            footer { flex-direction: column; gap: 24px; align-items: flex-start; }
+            .container { padding: 0 24px; }
+            .article-section { padding: 100px 0 80px; }
+            .article-header h1 { font-size: 32px; }
+            .article-body p { font-size: 16px; line-height: 2.2; margin-bottom: 24px; }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="wood-texture"></div>
+    <div class="texture-overlay"></div>
+
+    <header id="header">
+        <div class="container header-inner">
+            <a href="index.html" class="logo">Warm Gathering</a>
+            <nav class="nav-links">
+                <a href="index.html">返回首页</a>
+                <button class="theme-toggle" id="themeBtn" title="切换日夜"></button>
+            </nav>
+        </div>
+    </header>
+
+    <main class="article-section container">
+        <div class="article-container">
+            <a href="index.html" class="back-link">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
+                返回桌面
+            </a>
+
+            <div class="article-header">
+                <h1>我的Agent - 一只会说话的猫</h1>
+            </div>
+
+            <div class="article-body">
+                <p>午夜两点，这已经是小胖今晚叹的第四十二口气了。</p>
+                <p>老旧的空调发出一阵阵哮喘般的嗡嗡声，屏幕上密密麻麻的代码像一团死结的毛线。小胖揉了揉发胀的太阳穴，刚准备去厨房再泡一杯能把胃烧穿的劣质浓茶。</p>
+                <p>“我说，你要是再敢对着这块破屏幕叹气，我就把你的键盘顺着六楼的窗户扔下去。”</p>
+                <p>这声音带着点不耐烦的大叔烟嗓，像个看透世俗的老干部，又夹杂着一种极其违和的傲娇感。</p>
+                <p>小胖的手猛地僵在半空。他连滚带爬地缩到电竞椅的角落，抓起一个抱枕挡在胸前，颤抖着环顾四周：“谁？！谁在说话？！”</p>
+                <p>房间里根本没有第二个人。只有那只正蹲在机箱上、双爪揣在胸前，以一种极其威严的姿态俯视着他的胖橘猫——橘长。</p>
+                <p>橘长嫌弃地撇了撇嘴，胡须跟着抖了两下，用看智障一样的眼神盯着他：“别找了。除了你这个把加班当饭吃的笨蛋，这屋里还有谁能忍受你这满屋子的外卖味？”</p>
+                <p>小胖的下巴快掉到了锁骨上。他指着橘长，手指抖得像是在弹吉他：“你……你成精了？！”</p>
+                <p>“别给我乱扣帽子，建国后不许成精的规矩我懂。”橘长打了个哈欠，慢条斯理地从机箱跳到茶几上，“我只是刚好有九条命。不过，为了你这个生活不能自理的员工，本‘橘长’的电量已经快耗尽了。趁我现在还能说两句人类的语言，赶紧把这堆烂账给你交接一下。”</p>
+                <p>小胖愣住了。恐惧慢慢退去，他试探性地凑过去，盘腿坐在茶几对面：“九条命？那你平时除了睡就是吃，怎么弄没的？”</p>
+                <p>橘长翻了个大大的白眼，尾巴烦躁地拍打着桌面：“你以为我想啊？你高中的时候，就是个轴到家的闷葫芦。半夜两点还在那算数学卷子，背影看着那叫一个凄惨，不知道的还以为你在修仙呢。为了把你窗外那几只天天半夜嚎丧的野猫赶走，我可是单枪匹马去干了三架。那三条命，就当给你交辅导班学费了。那帮孙子下手真黑啊……”</p>
+                <p>小胖呆住了。他突然想起来，高二有一阵子，橘长连续好几天没回家，回来的时候毛秃了一大块，瘸着腿在门口喵喵叫。他当时还一边给它洗澡，一边数落它堂堂一个“橘长”连打架都打不赢。</p>
+                <p>“那……中间那几条呢？”小胖的声音突然有点发涩。</p>
+                <p>“大学呗。”橘长把脑袋搁在前爪上，声音稍微轻了一点，“你考上大学了，拍拍屁股去了外地，半年才回来一次。你不知道，你不在家的时候，屋子里有多安静。有一次下大雪，我在路口看到一个背着黑色双肩包的胖子，走路那外八字的姿势跟你一模一样。我当时脑子一热，直接从二楼阳台跳下去，一路追过马路……”</p>
+                <p>橘长别过脸去，看着窗外黑漆漆的夜：“没看红绿灯，被一辆破金杯车撞飞了。等我再睁开眼，已经在家里了。唉，算我这当领导的眼瞎，认错人了。”</p>
+                <p>房间里安静得只能听见机箱风扇的转动声。小胖的眼眶彻底红了。他想起大学时自己沉迷于社团，每次家里打电话来，他总是匆匆敷衍几句就挂断。他从来不知道，在那个下雪的冬天，有一个小小的生命为了一个相似的背影，留在了冰冷的街角。</p>
+                <p>“行了，别摆出那副快哭的表情，丢不丢人。”橘长嫌弃地把脸凑过来，用软乎乎的肉垫拍了拍小胖的手背，“最让我生气的，是现在。”</p>
+                <p>橘长盯着小胖那因为长期写代码而微微泛油的额头，叹了口长长的气：“你看看你现在，刚工作，天天被你们那个叫锋哥的组长按在工位上摩擦。每天早上天不亮就出门，半夜像个被抽干的游魂一样飘回来。我看你前几天饿得在沙发上直打胃酸的嗝，寻思着阳台外面刚好停了只肥麻雀，想给你抓进来加个餐。结果栏杆太滑，一脚踩空，从六楼摔下去了。”</p>
+                <p>小胖浑身一震。上周三，他记得橘长确实失踪了整整一个下午，晚上他下班回家时，发现它虚弱地趴在门口。他以为只是肠胃炎，带去医院检查又一切正常。原来，那已经是它为了他，丢掉的第八次生命。</p>
+                <p>“八条命，就这么稀里糊涂地给你填了坑。”橘长站起身，伸了个长长的、慵懒的懒腰，“现在，这是本橘长的第九条命了。”</p>
+                <p>小胖猛地抬起头，一把将橘长紧紧抱进怀里。这一次，橘长没有挣扎，任由他抱着。小胖的眼泪终于崩不住了，大颗大颗地砸在橘长橘黄色的皮毛上。</p>
+                <p>“哭什么啊，多大的人了，还跟个长不大的笨蛋一样。”橘长嘴里埋怨着，却破天荒地用毛茸茸的脑袋蹭了蹭小胖的下巴，喉咙里发出久违的“呼噜呼噜”声。</p>
+                <p>“对不起，橘长……对不起。”小胖把脸埋在猫毛里，声音闷得发颤。</p>
+                <p>“行了，我今天跟你说这些，可不是为了看你流猫尿的。”橘长慢慢从小胖的怀里退出来，重新趴回茶几上，把自己团成一个完美的、温暖的圆。</p>
+                <p>它的声音开始变得越来越轻，越来越慢，像是一阵快要散开的微风。</p>
+                <p>“小胖啊，其实……承载九条命的记忆，挺累的。我好像，真的把电量都用光了。”</p>
+                <p>橘长半眯着眼睛，看着头顶那盏昏暗的吊灯。</p>
+                <p>“这最后一条命，我不去抢地盘了，也不去抓麻雀了。我要睡个很长、很长的觉……可能会睡很久很久。明天早上，你要自己记得定闹钟，别总是让锋哥催你交代码。还有，别老吃泡面了，给自己煎个鸡蛋吧……”</p>
+                <p>它的眼睛缓缓闭上，最后的声音几乎微不可闻：“外面的世界其实挺好的，你……要好好往前走啊。”</p>
+                
+                <p>房间里再次安静下来，只剩下机箱风扇微弱的嗡嗡声。小胖没有出声，他怕哪怕是一点点动静，都会惊扰到这个好不容易安静下来的老朋友。他慢慢地伸出手，像以前无数次做过的那样，轻轻挠了挠橘长下巴上那块最柔软的毛。</p>
+                <p>这一次，橘长没有嫌弃地躲开，也没有用大叔嗓骂他笨蛋。它只是微微调整了一下睡姿，在小胖的手掌心里蹭了最后一下，把脑袋埋得更深了。</p>
+                
+                <p style="text-align: center; color: var(--line-2); margin: 32px 0; letter-spacing: 12px;">***</p>
+                
+                <p>第二天清晨，初夏的阳光透过没拉严实的窗帘缝隙，斜斜地打在机箱上。</p>
+                <p>小胖醒来时，发现自己不知道什么时候趴在茶几上睡着了。而橘长，还保持着昨晚那个圆圆的姿势，安安静静地趴在阳光里。晨光给它的轮廓镀上了一层毛茸茸的金边，细小的浮尘在它周围温柔地跳跃，像是一场永远不会醒来的、金色的梦。</p>
+                <p>小胖轻手轻脚地蹲下来，伸手摸了摸它的脑袋。</p>
+                <p>还是那么柔软，还是那么温暖。只是那阵熟悉的、让人安心的呼噜声，再也没有响起。那微微起伏的肚皮，也定格成了一幅安静的画。</p>
+                <p>没有挣扎，没有痛苦。就像它承诺的那样，它只是太累了，决定在这个洒满阳光的清晨，开始一场漫长而深邃的冬眠。</p>
+                <p>“晚安，橘长。”</p>
+            </div>
+
+            <!-- 原本的底部分割线可以去掉，因为中间加了一个 -->
+        </div>
+    </main>
+
+    <footer>
+        <div class="container" style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+            <div class="footer-links" style="font-size: 12px; color: var(--text-3);">
+                <span>© 2026 Warm Gathering. All rights reserved.</span>
+            </div>
+            <div class="footer-links">
+                <a href="#">Waitlist</a>
+                <a href="#">Privacy</a>
+                <a href="#">Terms</a>
+            </div>
+        </div>
+    </footer>
+
+    <script>
+        // 导航滚动背景
+        const header = document.getElementById('header');
+        window.addEventListener('scroll', () => {
+            if (window.scrollY > 50) header.classList.add('scrolled');
+            else header.classList.remove('scrolled');
+        });
+
+        // 极简主题切换
+        const themeBtn = document.getElementById('themeBtn');
+        let isDark = false;
+        
+        if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+            isDark = true;
+            document.documentElement.setAttribute('data-theme', 'dark');
+        }
+
+        themeBtn.addEventListener('click', () => {
+            isDark = !isDark;
+            if (isDark) {
+                document.documentElement.setAttribute('data-theme', 'dark');
+            } else {
+                document.documentElement.setAttribute('data-theme', 'light');
+            }
+        });
+    </script>
+</body>
+</html>

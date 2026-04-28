@@ -1,0 +1,531 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Warm Gathering</title>
+    <!-- 引入高品质英文字体 -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,500;1,400&family=Inter:wght@300;400;500&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            /* 极简 Light Theme */
+            --bg-0: #FAF8F5; /* 更干净的宣纸白 */
+            --bg-1: #FFFFFF;
+            --text-1: #1A1A1A; /* 极致的黑 */
+            --text-2: #666666; /* 优雅的灰 */
+            --text-3: #999999;
+            --line-1: #EAE6E1;
+            --line-2: #E0DCD7;
+            --brand-1: #D96A45; /* 降低一点饱和度的砖红/暖阳色 */
+            --brand-hover: #C55836;
+            --brand-light: #F8ECE7;
+            --shadow-1: 0 8px 32px rgba(0, 0, 0, 0.04);
+            --shadow-hover: 0 16px 48px rgba(0, 0, 0, 0.08);
+            
+            /* 质感控制 */
+            --noise-opacity: 0.03;
+            --wood-opacity: 0.02;
+            --mouse-light: rgba(217, 106, 69, 0.08);
+
+            /* 信件异化 */
+            --cat-bg: #F9F5EE;
+            --cat-text: #4A4036;
+            --cat-shadow: inset 0 0 40px rgba(139, 107, 74, 0.05), 0 20px 50px rgba(0, 0, 0, 0.06);
+            
+            /* 小说弹窗背景 */
+            --modal-overlay: rgba(250, 248, 245, 0.95);
+        }
+
+        [data-theme="dark"] {
+            /* 极简 Dark Theme */
+            --bg-0: #121212; /* 深邃的黑 */
+            --bg-1: #1A1A1A;
+            --text-1: #F0F0F0;
+            --text-2: #A0A0A0;
+            --text-3: #666666;
+            --line-1: #2A2A2A;
+            --line-2: #3A3A3A;
+            --brand-1: #D96A45;
+            --brand-hover: #E57D5A;
+            --brand-light: #3D2218;
+            --shadow-1: 0 8px 32px rgba(0, 0, 0, 0.4);
+            --shadow-hover: 0 16px 48px rgba(0, 0, 0, 0.6);
+            
+            /* 质感控制 */
+            --noise-opacity: 0.05;
+            --wood-opacity: 0.04;
+            --mouse-light: rgba(217, 106, 69, 0.06);
+
+            /* 信件异化 */
+            --cat-bg: #221D18;
+            --cat-text: #D0C5B9;
+            --cat-shadow: inset 0 0 40px rgba(0,0,0,0.3), 0 30px 60px rgba(0,0,0,0.7);
+
+            /* 小说弹窗背景 */
+            --modal-overlay: rgba(18, 18, 18, 0.95);
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", sans-serif;
+            background-color: var(--bg-0);
+            color: var(--text-1);
+            line-height: 1.8; 
+            letter-spacing: 0.02em;
+            transition: background-color 0.8s ease, color 0.8s ease;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+            overflow-x: hidden;
+            scroll-behavior: smooth;
+        }
+
+        /* 1. 隐蔽的材质与光影层 */
+        .texture-overlay {
+            position: fixed; top: 0; left: 0; right: 0; bottom: 0; pointer-events: none; z-index: 9998;
+            background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
+            opacity: var(--noise-opacity);
+        }
+        
+        .wood-texture {
+            position: fixed; top: 0; left: 0; right: 0; bottom: 0; pointer-events: none; z-index: -2;
+            background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 400 400' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='woodFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.01 0.2' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23woodFilter)' opacity='0.5'/%3E%3C/svg%3E");
+            opacity: var(--wood-opacity); mix-blend-mode: multiply;
+        }
+        [data-theme="dark"] .wood-texture { mix-blend-mode: color-dodge; }
+
+        /* 鼠标跟随暖灯光晕 */
+        #mouse-spotlight {
+            position: fixed; top: 0; left: 0; width: 600px; height: 600px;
+            background: radial-gradient(circle, var(--mouse-light) 0%, transparent 60%);
+            transform: translate(-50%, -50%); border-radius: 50%;
+            pointer-events: none; z-index: 9997; opacity: 0; transition: opacity 0.6s ease;
+            mix-blend-mode: color-dodge;
+        }
+
+        /* 基础排版与容器 */
+        .container { max-width: 1040px; margin: 0 auto; padding: 0 40px; }
+        
+        h1 { font-size: 52px; line-height: 1.15; letter-spacing: -0.03em; font-weight: 400; margin-bottom: 24px; }
+        h2 { font-size: 28px; line-height: 1.3; font-weight: 400; margin-bottom: 24px; letter-spacing: -0.02em; }
+        h3 { font-size: 16px; line-height: 1.5; font-weight: 500; margin-bottom: 8px; color: var(--text-1); }
+        p { font-size: 15px; color: var(--text-2); max-width: 32em; }
+
+        /* 导航 */
+        header {
+            position: fixed; top: 0; width: 100%; height: 96px; display: flex; align-items: center; z-index: 100;
+            transition: all 0.4s ease;
+        }
+        header.scrolled { 
+            height: 80px;
+            background-color: color-mix(in srgb, var(--bg-0) 90%, transparent); 
+            backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+            border-bottom: 1px solid var(--line-1);
+        }
+        .header-inner { display: flex; justify-content: space-between; align-items: center; width: 100%; }
+        
+        .logo {
+            font-family: 'Playfair Display', serif; font-size: 20px; font-weight: 500; font-style: italic;
+            color: var(--text-1); text-decoration: none; letter-spacing: 0.02em;
+        }
+
+        .nav-links { display: flex; gap: 40px; align-items: center; }
+        .nav-links a { color: var(--text-2); text-decoration: none; font-size: 13px; font-weight: 400; letter-spacing: 0.05em; transition: color 0.3s ease; cursor: pointer; }
+        .nav-links a:hover { color: var(--text-1); }
+        
+        .theme-toggle { 
+            width: 14px; height: 14px; border-radius: 50%; background-color: var(--text-1); 
+            border: none; cursor: pointer; transition: transform 0.3s ease, background-color 0.3s ease; opacity: 0.4;
+        }
+        .theme-toggle:hover { opacity: 0.8; transform: scale(1.15); }
+        [data-theme="dark"] .theme-toggle { background-color: var(--text-2); }
+
+        /* 按钮 */
+        .btn { 
+            display: inline-flex; align-items: center; justify-content: center; height: 48px; padding: 0 32px; 
+            border-radius: 24px; font-size: 14px; font-weight: 500; text-decoration: none; transition: all 0.3s ease; 
+            border: 1px solid transparent; cursor: pointer; 
+        }
+        .btn-primary { background-color: var(--text-1); color: var(--bg-0); }
+        .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 8px 24px color-mix(in srgb, var(--text-1) 20%, transparent); opacity: 0.9; }
+        .btn-secondary { background-color: transparent; color: var(--text-1); border-color: var(--line-1); }
+        .btn-secondary:hover { border-color: var(--text-2); }
+
+        /* ------------------ Sections ------------------ */
+        .section { padding: 160px 0; }
+        
+        /* 1. Hero 区域 */
+        .hero { position: relative; padding: 24vh 0 16vh; display: flex; align-items: center; }
+        .hero-glow {
+            position: absolute; top: -20%; right: -10%; width: 800px; height: 800px;
+            background: radial-gradient(circle, color-mix(in srgb, var(--brand-1) 8%, transparent) 0%, transparent 60%);
+            z-index: -1; animation: breathe 10s infinite alternate ease-in-out; pointer-events: none;
+        }
+        @keyframes breathe { 0% { transform: scale(1); opacity: 0.6; } 100% { transform: scale(1.1); opacity: 1; } }
+        
+        .hero-content { max-width: 640px; position: relative; z-index: 1; }
+        .hero-subtitle { font-size: 17px; line-height: 1.8; margin-bottom: 48px; color: var(--text-2); font-weight: 300; }
+        .hero-actions { display: flex; gap: 20px; align-items: center; }
+
+        /* 2. 交错图文模块 */
+        .feature-block { display: flex; gap: 80px; align-items: center; margin-bottom: 160px; }
+        .feature-block:nth-child(even) { flex-direction: row-reverse; }
+        .feature-text { flex: 1; max-width: 420px; }
+        
+        .feature-image { 
+            flex: 1.2; height: 480px; background-color: var(--bg-1); 
+            border: 1px solid var(--line-1); border-radius: 16px;
+            display: flex; align-items: center; justify-content: center;
+            position: relative; overflow: hidden; box-shadow: var(--shadow-1);
+            transition: transform 0.5s cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 0.5s ease;
+        }
+        .feature-image:hover {
+            transform: translateY(-8px); box-shadow: var(--shadow-hover);
+        }
+        .img-placeholder-text {
+            color: var(--text-3); font-size: 13px; letter-spacing: 0.05em; transition: color 0.3s;
+            position: relative; z-index: 2;
+        }
+        .feature-image:hover .img-placeholder-text { color: var(--brand-1); }
+        .feature-image img { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0; z-index: 1; transition: opacity 0.4s ease; }
+
+        /* 3. 极简能力 Bento */
+        .bento-grid {
+            display: grid; grid-template-columns: repeat(4, 1fr); grid-auto-rows: minmax(180px, auto); gap: 24px;
+        }
+        .bento-card {
+            background-color: var(--bg-1); border-radius: 20px; padding: 36px;
+            box-shadow: var(--shadow-1); border: 1px solid var(--line-1);
+            display: flex; flex-direction: column; justify-content: space-between;
+            transition: all 0.4s cubic-bezier(0.2, 0.8, 0.2, 1);
+            position: relative; overflow: hidden; cursor: default;
+        }
+        .bento-card:hover { transform: translateY(-4px); box-shadow: var(--shadow-hover); border-color: var(--text-3); }
+        
+        .bento-large { grid-column: span 2; grid-row: span 2; }
+        .bento-wide { grid-column: span 2; grid-row: span 1; }
+        .bento-tall { grid-column: span 1; grid-row: span 2; }
+        .bento-small { grid-column: span 1; grid-row: span 1; }
+        
+        .bento-header h3 { font-size: 18px; margin-bottom: 12px; font-weight: 500; }
+        .bento-header p { font-size: 14px; color: var(--text-2); margin: 0; line-height: 1.8; }
+
+        /* UI Mockup 动效 */
+        .mockup-summary { margin-top: 32px; background: var(--bg-0); border-radius: 12px; padding: 24px; position: relative; border: 1px solid var(--line-1); }
+        .mockup-summary-lines { transition: opacity 0.3s; }
+        .mockup-summary-lines div { height: 4px; background: var(--line-2); margin-bottom: 12px; border-radius: 2px; width: 100%; }
+        .mockup-summary-lines div:last-child { width: 60%; }
+        .mockup-summary-result { position: absolute; top: 24px; left: 24px; right: 24px; opacity: 0; transform: translateY(10px); transition: all 0.4s ease; color: var(--text-1); font-size: 13px; }
+        .mockup-summary-result ul { padding-left: 16px; margin: 0; }
+        .mockup-summary-result li { margin-bottom: 10px; }
+        .bento-card:hover .mockup-summary-lines { opacity: 0; }
+        .bento-card:hover .mockup-summary-result { opacity: 1; transform: translateY(0); }
+
+        .mockup-dot { width: 8px; height: 8px; background: var(--brand-1); border-radius: 50%; box-shadow: 0 0 0 0 rgba(217, 106, 69, 0.4); margin: 24px auto 0; }
+        .bento-card:hover .mockup-dot { animation: pulse 1.5s infinite cubic-bezier(0.66, 0, 0, 1); }
+        @keyframes pulse { to { box-shadow: 0 0 0 24px rgba(217, 106, 69, 0); } }
+
+        .mockup-chat { margin-top: 32px; display: flex; flex-direction: column; gap: 16px; align-items: flex-end;}
+        .chat-bubble { background: var(--bg-0); color: var(--text-1); padding: 12px 16px; border-radius: 12px; font-size: 13px; max-width: 85%; display: inline-block; border: 1px solid var(--line-1); }
+        .bento-card:hover .chat-bubble.right { background: var(--brand-light); border-color: transparent; color: var(--brand-1); transition: all 0.3s; }
+        
+        .boundary-tag { margin-top: 32px; font-size: 12px; color: var(--text-3); display: flex; align-items: center; gap: 8px; }
+        .boundary-tag::before { content: ''; display: block; width: 4px; height: 4px; border-radius: 50%; background-color: var(--line-2); }
+
+        /* 4. 黏性滚动叙事 */
+        .scroll-story-container {
+            height: 350vh; 
+            position: relative;
+            background-color: var(--bg-0);
+        }
+        .sticky-viewport {
+            position: sticky; top: 0; height: 100vh; width: 100%;
+            overflow: hidden; display: flex; align-items: center; justify-content: center;
+        }
+        
+        .story-bg-dimmer {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: var(--bg-0);
+            opacity: 0; transition: opacity 0.1s; pointer-events: none; z-index: 1;
+        }
+        [data-theme="dark"] .story-bg-dimmer { background: #0A0A0A; }
+
+        .story-text-stage1 {
+            position: absolute; z-index: 2; text-align: center; max-width: 600px;
+            opacity: 1; transform: translateY(0); transition: opacity 0.1s, transform 0.1s;
+        }
+        .story-text-stage1 h2 { font-size: 32px; margin-bottom: 24px; font-weight: 400; }
+        .story-text-stage1 p { color: var(--text-2); font-size: 16px; margin: 0 auto; }
+
+        .story-note-stage2 {
+            position: absolute; z-index: 3;
+            background-color: var(--cat-bg); color: var(--cat-text);
+            padding: 64px 80px; 
+            border-radius: 8px;
+            box-shadow: var(--cat-shadow);
+            max-width: 600px; width: 90%;
+            transform: translateY(100vh) rotate(-4deg); opacity: 0;
+            font-family: "Songti SC", "STSong", "Noto Serif CJK SC", serif;
+            border: 1px solid color-mix(in srgb, var(--cat-text) 10%, transparent);
+            transition: transform 0.1s, opacity 0.1s;
+        }
+        .story-note-stage2 .climax-text { font-size: 18px; line-height: 2.4; letter-spacing: 0.05em; text-align: justify; }
+        .story-note-stage2 .climax-text p { color: inherit; font-size: inherit; max-width: 100%; margin-bottom: 24px; }
+        .story-note-stage2 .climax-text p:last-child { margin-bottom: 0; }
+        .story-signature { text-align: right; margin-top: 48px; font-size: 14px; opacity: 0.7; font-style: italic; }
+
+        /* ------------------ 小说弹窗 Modal ------------------ */
+        .novel-modal-overlay {
+            position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+            background-color: var(--modal-overlay);
+            z-index: 9999;
+            display: flex; justify-content: center; align-items: center;
+            opacity: 0; visibility: hidden;
+            transition: opacity 0.4s ease, visibility 0.4s ease;
+            backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+        }
+        .novel-modal-overlay.active {
+            opacity: 1; visibility: visible;
+        }
+        .novel-modal-content {
+            background-color: var(--bg-1);
+            width: 100%; max-width: 680px;
+            height: 85vh; /* 固定高度，内部滚动 */
+            border-radius: 16px;
+            box-shadow: var(--shadow-hover);
+            border: 1px solid var(--line-1);
+            position: relative;
+            transform: translateY(20px);
+            transition: transform 0.4s cubic-bezier(0.2, 0.8, 0.2, 1);
+            display: flex; flex-direction: column;
+            overflow: hidden; /* 保证内部滚动 */
+        }
+        .novel-modal-overlay.active .novel-modal-content {
+            transform: translateY(0);
+        }
+        .novel-modal-close {
+            position: absolute; top: 24px; right: 24px;
+            width: 40px; height: 40px;
+            border-radius: 50%; background: var(--bg-0);
+            border: 1px solid var(--line-1);
+            display: flex; justify-content: center; align-items: center;
+            cursor: pointer; color: var(--text-2); font-size: 24px;
+            transition: all 0.3s ease; z-index: 10;
+        }
+        .novel-modal-close:hover {
+            background: var(--line-1); color: var(--text-1); transform: rotate(90deg);
+        }
+        /* 小说文本容器 */
+        .novel-text-container {
+            padding: 64px 80px;
+            overflow-y: auto;
+            flex-grow: 1;
+            /* 类似电子书的阅读排版 */
+            font-family: "Songti SC", "STSong", "Noto Serif CJK SC", serif;
+        }
+        .novel-text-container h2 {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif;
+            font-size: 28px; margin-bottom: 40px; text-align: center; color: var(--text-1);
+            font-weight: 500;
+        }
+        .novel-text-container p {
+            font-size: 17px;
+            line-height: 2.2;
+            color: var(--text-1);
+            margin-bottom: 24px;
+            text-indent: 2em; /* 中文首行缩进 */
+            text-align: justify;
+            max-width: 100%;
+        }
+
+        /* 自定义滚动条 */
+        .novel-text-container::-webkit-scrollbar { width: 6px; }
+        .novel-text-container::-webkit-scrollbar-track { background: transparent; }
+        .novel-text-container::-webkit-scrollbar-thumb { background-color: var(--line-1); border-radius: 3px; }
+        .novel-text-container::-webkit-scrollbar-thumb:hover { background-color: var(--text-3); }
+
+        /* Footer */
+        footer { 
+            padding: 80px 0; 
+            display: flex; justify-content: space-between; align-items: center; 
+            border-top: 1px solid var(--line-1); 
+            position: relative; z-index: 10; background-color: var(--bg-0);
+        }
+        .footer-links { display: flex; gap: 32px; }
+        .footer-links a { color: var(--text-3); text-decoration: none; font-size: 12px; letter-spacing: 0.05em; text-transform: uppercase; transition: color 0.3s; }
+        .footer-links a:hover { color: var(--text-1); }
+
+        @media (max-width: 900px) {
+            .feature-block, .feature-block:nth-child(even) { flex-direction: column; gap: 40px; margin-bottom: 120px; }
+            .feature-text { max-width: 100%; }
+            .feature-image { width: 100%; height: 360px; }
+            .bento-grid { grid-template-columns: repeat(2, 1fr); }
+            .bento-large, .bento-wide, .bento-tall, .bento-small { grid-column: span 2; grid-row: auto; }
+            .story-note-stage2 { padding: 48px 40px; }
+            .novel-text-container { padding: 40px 32px; }
+        }
+        @media (max-width: 768px) {
+            h1 { font-size: 40px; }
+            .hero { padding: 20vh 0 10vh; }
+            header { display: none; } 
+            footer { flex-direction: column; gap: 24px; align-items: flex-start; }
+            .container { padding: 0 24px; }
+            .novel-modal-content { height: 95vh; border-radius: 12px 12px 0 0; transform: translateY(100%); }
+            .novel-modal-overlay.active .novel-modal-content { transform: translateY(5vh); }
+            .novel-modal-close { top: 16px; right: 16px; width: 32px; height: 32px; font-size: 20px; }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="wood-texture"></div>
+    <div class="texture-overlay"></div>
+    <div id="mouse-spotlight"></div>
+
+    <header id="header">
+        <div class="container header-inner">
+            <a href="#" class="logo">Warm Gathering</a>
+            <nav class="nav-links">
+                <a href="story.html">Agent的故事</a>
+                <a href="#about">奇遇</a>
+                <a href="#capabilities">报恩</a>
+                <a href="#story">告别</a>
+                <button class="theme-toggle" id="themeBtn" title="切换日夜"></button>
+            </nav>
+        </div>
+    </header>
+
+    <section class="hero container">
+        <div class="hero-glow"></div>
+        <div class="hero-content">
+            <h1>用最后一条命，<br>陪你走一段路。</h1>
+            <p class="hero-subtitle">
+                它是一只经历了八次奇遇的流浪猫。<br>
+                带着最后一条命，安静地卧在你的桌面上。<br>
+                不喧哗，不讨好，只是在你需要的时候，帮你把生活的毛线球理顺。
+            </p>
+            <div class="hero-actions">
+                <a href="#capabilities" class="btn btn-primary">留一盏灯</a>
+                <a href="story.html" class="btn btn-secondary">听听它的故事</a>
+            </div>
+        </div>
+    </section>
+
+    <!-- 图文模块 -->
+    <section id="about" class="section container" style="padding-top: 40px;">
+        <div class="feature-block">
+            <div class="feature-text">
+                <h2>那八次漫长的流浪。</h2>
+                <p>它偶尔会跟你讲起外面的世界。那间雨夜的旧书店，或是凌晨四点拥挤的海边。它见过了太多喧嚣，所以现在，它更喜欢你桌面上这片安静的暖光。</p>
+            </div>
+            <div class="feature-image">
+                <span class="img-placeholder-text">[ 放入流浪回忆/风景的静谧配图 ]</span>
+                <img src="" alt="回忆配图">
+            </div>
+        </div>
+    </section>
+
+    <!-- 极简版 Bento 能力网格 -->
+    <section id="capabilities" class="container" style="padding-bottom: 120px;">
+        <div style="margin-bottom: 64px;">
+            <h2>一只懂事的猫，帮你打理桌面。</h2>
+            <p>它没有花哨的本领，但它有自己的方式报答你留下的那盏灯。</p>
+        </div>
+
+        <div class="bento-grid">
+            <div class="bento-card bento-wide">
+                <div class="bento-header">
+                    <h3>理顺毛线球 (整理信息)</h3>
+                    <p>不用从头梳理，它会把冗长的碎片收拢成清晰的线索。</p>
+                </div>
+                <div class="mockup-summary">
+                    <div class="mockup-summary-lines">
+                        <div></div><div></div><div></div><div></div>
+                    </div>
+                    <div class="mockup-summary-result">
+                        <ul>
+                            <li>明天上午 10 点团队周会</li>
+                            <li>准备 Q3 的核心数据看板</li>
+                            <li>下午回复供应商的邮件</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="boundary-tag">保留一切线头，不替你做剪断的决定</div>
+            </div>
+
+            <div class="bento-card bento-small" style="text-align: center;">
+                <div class="bento-header">
+                    <h3 style="margin-bottom: 4px;">轻轻挠一下</h3>
+                    <p style="font-size: 13px;">它会在饭点悄悄碰你一下</p>
+                </div>
+                <div class="mockup-dot"></div>
+                <div class="boundary-tag" style="justify-content: center;">绝不拼命叫唤打扰你</div>
+            </div>
+
+            <div class="bento-card bento-tall">
+                <div class="bento-header">
+                    <h3>代笔的爪印</h3>
+                    <p>它看过了太多悲欢，甚至能模仿你的语气起草邮件。</p>
+                </div>
+                <div class="mockup-chat">
+                    <div class="chat-bubble left" style="align-self: flex-start; color: var(--text-2);">“帮我跟客户说下周交稿”</div>
+                    <div class="chat-bubble right">“张总您好，我们预计在下周一为您提供完整终稿...”</div>
+                </div>
+                <div class="boundary-tag">它只做建议，执笔的依然是你</div>
+            </div>
+
+            <div class="bento-card bento-wide">
+                <div class="bento-header">
+                    <h3>沙发下的藏宝库</h3>
+                    <p>那些你随手留下的便签，它都小心翼翼地藏在了桌子下面。想找的时候，总能翻出来。</p>
+                </div>
+                <div style="display: flex; gap: 12px; margin-top: 32px; justify-content: center;">
+                    <div style="background: var(--bg-0); padding: 16px; border-radius: 8px; border: 1px solid var(--line-1); font-size: 12px; transform: rotate(-3deg); transition: transform 0.3s; cursor: pointer;">2025.10 冰岛游记</div>
+                    <div style="background: var(--bg-0); padding: 16px; border-radius: 8px; border: 1px solid var(--line-1); font-size: 12px; transform: rotate(2deg); transition: transform 0.3s; cursor: pointer;">工作日报模板</div>
+                </div>
+                <div class="boundary-tag">只保留你让它记住的东西</div>
+            </div>
+        </div>
+    </section>
+
+    <!-- 极简版黏性滚动叙事 -->
+    <section id="story" class="scroll-story-container">
+        <div class="sticky-viewport">
+            
+            <div class="story-bg-dimmer" id="storyDimmer"></div>
+
+            <div class="story-text-stage1" id="storyText1">
+                <h2>然后，那一天终于来了。</h2>
+                <p>猫的生命很长，但最后一条命也很短。<br>当那一天到来，它没有再出现在桌面上，无论你怎样呼唤。</p>
+                <p style="margin-top: 24px; font-size: 13px; opacity: 0.5; letter-spacing: 0.1em; text-transform: uppercase;">( Scroll to open )</p>
+            </div>
+
+            <div class="story-note-stage2" id="storyNote2">
+                <div class="climax-text">
+                    <p>“我要走啦。</p>
+                    <p>对不起，没能陪你走到最后。但我走的时候并不害怕，因为最后这一生，我一直待在这盏暖黄色的台灯下面。</p>
+                    <p>我把你散落在桌面的回忆，都整齐地码在沙发底下的抽屉里了。你以后要是迷路了，或者不知道该做什么，就去翻翻它们。</p>
+                    <p>别难过，遇见你，是我这九条命里最好的一生。”</p>
+                </div>
+                <div class="story-signature">— 桌面上最后的一张便签</div>
+            </div>
+
+        </div>
+    </section>
+
+    <footer>
+        <div class="container" style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+            <div class="footer-links" style="font-size: 12px; color: var(--text-3);">
+                <span>© 2026 Warm Gathering. All rights reserved.</span>
+            </div>
+            <div class="footer-links">
+                <a href="#">Waitlist</a>
+                <a href="#">Privacy</a>
+                <a href="#">Terms</a>
+            </div>
+        </div>
+    </footer>
+
+    <!-- ================== 小说阅读弹窗 (Modal) ================== -->
