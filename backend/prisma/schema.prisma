@@ -16,7 +16,7 @@ model User {
   deviceId      String?   @unique // 用于访客/匿名登录
   personaPrompt String?   // 夜间反思更新的专属人设
   apiKey        String?   // 用户自己填写的 API Key
-  modelName     String?   @default("MiniMax-Text-01") // 用户选择的模型名称
+  modelName     String?   @default("MiniMax 2.7") // 用户选择的模型名称
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 

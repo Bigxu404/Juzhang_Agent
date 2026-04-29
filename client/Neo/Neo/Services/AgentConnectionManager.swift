@@ -11,7 +11,7 @@ class AgentConnectionManager: ObservableObject {
     
     private var webSocketTask: URLSessionWebSocketTask?
     
-    // Server URL (Change to your local IP or production server later)
+    // Server URL
     private let serverURL = URL(string: "ws://localhost:3000/socket.io/?EIO=4&transport=websocket")!
     
     private init() {
@@ -85,6 +85,15 @@ class AgentConnectionManager: ObservableObject {
         // Handle Socket.IO Connect success packet
         if text.starts(with: "40") {
             print("Socket.IO Namespace Connected")
+            return
+        }
+        
+        // Handle Socket.IO Connect Error packet
+        if text.starts(with: "44") {
+            print("Socket.IO Connect Error: \(text)")
+            DispatchQueue.main.async {
+                self.agentState = OldAgentState(status: "ERROR", description: "认证失败，请重新登录")
+            }
             return
         }
         

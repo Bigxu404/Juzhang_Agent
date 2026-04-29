@@ -29,7 +29,7 @@ authRouter.post('/register', async (req, res) => {
     });
 
     const token = jwt.sign({ userId: user.id }, JWT_SECRET, { expiresIn: '7d' });
-    res.json({ user: { id: user.id, username: user.username }, token });
+    res.json({ user: { id: user.id, username: user.username, modelName: user.modelName }, token });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -50,7 +50,7 @@ authRouter.post('/login', async (req, res) => {
     }
 
     const token = jwt.sign({ userId: user.id }, JWT_SECRET, { expiresIn: '7d' });
-    res.json({ user: { id: user.id, username: user.username }, token });
+    res.json({ user: { id: user.id, username: user.username, modelName: user.modelName }, token });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }

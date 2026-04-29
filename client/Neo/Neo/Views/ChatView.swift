@@ -12,62 +12,92 @@ struct UIChatMessage: Identifiable {
 /// 主聊天界面
 struct ChatView: View {
     @State private var inputText = ""
-    @State private var currentState: AgentState = .idle
+    @StateObject private var connectionManager = AgentConnectionManager.shared
     @State private var isProcessExpanded = false
     
-    // 模拟对话历史
-    @State private var messages: [UIChatMessage] = [
-        UIChatMessage(text: "上午好，小胖。昨晚没睡好吗？", type: .agent, state: .idle, isStreaming: false),
-        UIChatMessage(text: "帮我查一下明天北京的天气，然后写一封邮件给客户约下午的会议。", type: .user, state: nil, isStreaming: false)
-    ]
+    @State private var showDrawer = false
+    
+    private var currentState: AgentState {
+        switch connectionManager.agentState.status {
+        case "IDLE", "DISCONNECTED": return .idle
+        case "THINKING": return .thinking
+        case "WORKING": return .working
+        case "SUCCESS": return .success
+        default: return .idle
+        }
+    }
     
     var body: some View {
+        ZStack(alignment: .leading) {
+            // 原有的内容被包装在主界面层
+            mainContent
+            
+            // 抽屉遮罩层
+            if showDrawer {
+                Color.black.opacity(0.4)
+                    .ignoresSafeArea()
+                    .onTapGesture {
+                        withAnimation(.spring()) {
+                            showDrawer = false
+                        }
+                    }
+                    .zIndex(100)
+            }
+            
+            // 左侧抽屉内容
+            if showDrawer {
+                sideDrawer
+                    .frame(width: UIScreen.main.bounds.width * 0.75)
+                    .background(AppTheme.surface1)
+                    .transition(.move(edge: .leading))
+                    .zIndex(101)
+                    .ignoresSafeArea(.all, edges: .bottom)
+            }
+        }
+        .onAppear {
+            connectionManager.fetchSessions()
+        }
+    }
+    
+    // 主界面内容抽取出来
+    private var mainContent: some View {
         ZStack {
             // 全局背景 (奶油雾白)
             AppTheme.bgBase.ignoresSafeArea()
             
             VStack(spacing: 0) {
-                
-                // 1. Top StatusBar (顶部状态条)
-                HStack(spacing: 12) {
-                    StatusAvatarView(state: currentState, size: 32)
+                // 1. 顶部导航栏 (标准 iOS 风格)
+                HStack {
+                    Button(action: {
+                        withAnimation { showDrawer = true }
+                    }) {
+                        Image(systemName: "line.3.horizontal")
+                            .font(.system(size: 22, weight: .medium))
+                            .foregroundColor(AppTheme.textPrimary)
+                    }
                     
-                    Text(statusText(for: currentState))
-                        .font(.system(size: 14, weight: .medium))
+                    Spacer()
+                    
+                    Text("对话")
+                        .font(.system(size: 17, weight: .semibold))
                         .foregroundColor(AppTheme.textPrimary)
                     
                     Spacer()
                     
-                    // 模拟切换状态的调试按钮
-                    Menu {
-                        ForEach(AgentState.allCases, id: \.self) { state in
-                            Button(action: {
-                                withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
-                                    currentState = state
-                                    if state == .working || state == .thinking {
-                                        isProcessExpanded = true
-                                    } else if state == .success {
-                                        isProcessExpanded = false
-                                    }
-                                }
-                            }) {
-                                Text(state.rawValue)
-                            }
-                        }
-                    } label: {
-                        Image(systemName: "ellipsis.circle")
-                            .font(.system(size: 20))
-                            .foregroundColor(AppTheme.textTertiary)
+                    Button(action: {
+                        connectionManager.clearSession()
+                    }) {
+                        Image(systemName: "square.and.pencil")
+                            .font(.system(size: 22, weight: .medium))
+                            .foregroundColor(AppTheme.textPrimary)
                     }
                 }
                 .padding(.horizontal, 20)
-                .padding(.vertical, 12)
-                .background(AppTheme.surface1.opacity(0.95))
-                .overlay(
-                    Rectangle()
-                        .frame(height: 1)
-                        .foregroundColor(AppTheme.strokeLighter),
-                    alignment: .bottom
+                .padding(.top, 16)
+                .padding(.bottom, 12)
+                .background(
+                    AppTheme.bgBase.opacity(0.95)
+                        .ignoresSafeArea(.all, edges: .top)
                 )
                 .zIndex(10)
                 
@@ -77,16 +107,27 @@ struct ChatView: View {
                         VStack(spacing: 16) {
                             
                             // 历史消息列表
-                            ForEach(messages) { msg in
+                            ForEach(connectionManager.messages) { msg in
                                 ChatBubble(text: msg.text, type: msg.type, state: msg.state, isStreaming: msg.isStreaming)
-                                    .padding(.top, msg.id == messages.first?.id ? 24 : 0)
+                                    .padding(.top, msg.id == connectionManager.messages.first?.id ? 24 : 0)
                             }
                             
                             // 过程总览卡片 (模拟思考/工具调用)
                             if currentState == .thinking || currentState == .working {
+                                // 橘长状态提示
+                                HStack(spacing: 12) {
+                                    StatusAvatarView(state: currentState, size: 28)
+                                    Text(statusText(for: currentState))
+                                        .font(.system(size: 13, weight: .medium))
+                                        .foregroundColor(AppTheme.textSecondary)
+                                    Spacer()
+                                }
+                                .padding(.horizontal, 24)
+                                .padding(.top, 8)
+                                
                                 ProcessTimelineView(
                                     title: "正在处理",
-                                    subtitle: currentState == .thinking ? "思考中..." : "工具调用 3 项",
+                                    subtitle: connectionManager.agentState.description,
                                     isExpanded: isProcessExpanded,
                                     state: currentState
                                 )
@@ -98,10 +139,10 @@ struct ChatView: View {
                             }
                             
                             // 底部留白给 BottomNav
-                            Color.clear.frame(height: 100).id("bottom")
+                            Color.clear.frame(height: 20).id("bottom")
                         }
                     }
-                    .onChange(of: messages.count) { oldValue, newValue in
+                    .onChange(of: connectionManager.messages.count) { oldValue, newValue in
                         withAnimation {
                             proxy.scrollTo("bottom", anchor: .bottom)
                         }
@@ -113,104 +154,120 @@ struct ChatView: View {
                     }
                 }
                 
-                // 3. Input Bar (输入区)
-                VStack(spacing: 0) {
-                    Divider().background(AppTheme.strokeLighter)
-                    
-                    HStack(spacing: 12) {
-                        // 附件按钮 (加号)
-                        Button(action: {}) {
-                            Image(systemName: "plus.circle.fill")
-                                .font(.system(size: 24))
-                                .foregroundColor(AppTheme.textTertiary)
-                        }
-                        
-                        // 输入框 (Surface-2)
-                        TextField("给橘长递纸条...", text: $inputText)
-                            .font(.system(size: 16, weight: .regular))
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 10)
-                            .background(AppTheme.surface2)
-                            .clipShape(RoundedRectangle(cornerRadius: AppTheme.rS, style: .continuous))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: AppTheme.rS, style: .continuous)
-                                    .stroke(AppTheme.strokeSoft, lineWidth: 1)
-                            )
-                        
-                        // 发送按钮 (橘色点睛)
-                        Button(action: sendMessage) {
-                            Image(systemName: "arrow.up")
-                                .font(.system(size: 14, weight: .bold))
-                                .foregroundColor(.white)
-                                .frame(width: 36, height: 36)
-                                .background(AppTheme.brandOrange)
-                                .clipShape(Circle())
-                                .shadow(color: AppTheme.brandOrange.opacity(0.3), radius: 6, x: 0, y: 3)
-                        }
-                        .disabled(inputText.isEmpty)
-                        .opacity(inputText.isEmpty ? 0.5 : 1.0)
+                // 3. Input Bar (悬浮胶囊风格)
+                HStack(spacing: 12) {
+                    // 附件按钮 (加号)
+                    Button(action: {}) {
+                        Image(systemName: "plus.circle.fill")
+                            .font(.system(size: 24))
+                            .foregroundColor(AppTheme.textTertiary)
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 12)
-                    .background(AppTheme.surface1)
+                    
+                    // 输入框
+                    TextField("给橘长递纸条...", text: $inputText)
+                        .font(.system(size: 16, weight: .regular))
+                        .foregroundColor(AppTheme.textPrimary)
+                    
+                    // 发送按钮 (橘色点睛)
+                    Button(action: sendMessage) {
+                        Image(systemName: "arrow.up")
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundColor(.white)
+                            .frame(width: 32, height: 32)
+                            .background(AppTheme.brandOrange)
+                            .clipShape(Circle())
+                            .shadow(color: AppTheme.brandOrange.opacity(0.3), radius: 6, x: 0, y: 3)
+                    }
+                    .disabled(inputText.isEmpty)
+                    .opacity(inputText.isEmpty ? 0.5 : 1.0)
                 }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+                .background(.ultraThinMaterial)
+                .clipShape(Capsule())
+                .shadow(color: Color.black.opacity(0.1), radius: 16, x: 0, y: 4)
+                .padding(.horizontal, 20)
+                .padding(.bottom, 96) // 把悬浮胶囊推到 TabBar 上方
             }
         }
     }
     
-    // 模拟发送消息和回复逻辑
+    // 左侧抽屉视图
+    private var sideDrawer: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // 抽屉头部
+            HStack {
+                Text("历史记录")
+                    .font(.system(size: 22, weight: .bold))
+                    .foregroundColor(AppTheme.textPrimary)
+                Spacer()
+                Button(action: {
+                    withAnimation(.spring()) { showDrawer = false }
+                }) {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 24))
+                        .foregroundColor(AppTheme.textTertiary)
+                }
+            }
+            .padding(24)
+            .padding(.top, 40)
+            
+            Divider().background(AppTheme.strokeSoft)
+            
+            // 会话列表
+            ScrollView {
+                VStack(spacing: 12) {
+                    if connectionManager.sessions.isEmpty {
+                        Text("暂无历史记录")
+                            .font(.system(size: 14))
+                            .foregroundColor(AppTheme.textSecondary)
+                            .padding(.top, 40)
+                    } else {
+                        ForEach(connectionManager.sessions) { session in
+                            Button(action: {
+                                connectionManager.loadSession(id: session.id)
+                                withAnimation(.spring()) { showDrawer = false }
+                            }) {
+                                VStack(alignment: .leading, spacing: 6) {
+                                    Text(session.title)
+                                        .font(.system(size: 16, weight: .medium))
+                                        .foregroundColor(AppTheme.textPrimary)
+                                        .lineLimit(1)
+                                    Text(session.formattedDate)
+                                        .font(.system(size: 12))
+                                        .foregroundColor(AppTheme.textTertiary)
+                                }
+                                .padding(16)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .background(AppTheme.surface2)
+                                .clipShape(RoundedRectangle(cornerRadius: AppTheme.rM))
+                            }
+                        }
+                    }
+                }
+                .padding(16)
+            }
+        }
+    }
+    
+    // 实际发送消息逻辑
     private func sendMessage() {
         guard !inputText.isEmpty else { return }
         
         let userText = inputText
         inputText = ""
         
-        // 1. 添加用户消息
-        messages.append(UIChatMessage(text: userText, type: .user, state: nil, isStreaming: false))
+        // 调用 AgentConnectionManager 实际发送请求到后端
+        connectionManager.sendMessage(userText)
         
-        // 2. 状态切换为思考
         withAnimation {
-            currentState = .thinking
             isProcessExpanded = true
-        }
-        
-        // 3. 模拟思考 1 秒后切换为工作中 (调用工具)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-            withAnimation {
-                currentState = .working
-            }
-            
-            // 4. 模拟工作 2 秒后完成并回复
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
-                withAnimation {
-                    currentState = .success
-                    isProcessExpanded = false
-                }
-                
-                // 5. 延迟 0.5 秒后开始流式输出回复
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                    let isThanks = userText.contains("谢谢") || userText.contains("好")
-                    let replyText = isThanks ? "不客气，这是我应该做的~" : "好的，北京明天晴，最高气温 22°C。邮件草稿已经帮你写好啦，你看一下有没有需要修改的？"
-                    
-                    withAnimation {
-                        currentState = isThanks ? .happy : .idle
-                    }
-                    
-                    messages.append(UIChatMessage(text: replyText, type: .agent, state: currentState, isStreaming: true))
-                }
-            }
         }
     }
     
     // 辅助方法：根据状态返回文案
     private func statusText(for state: AgentState) -> String {
-        switch state {
-        case .idle: return "橘长在安静地待机"
-        case .thinking: return "橘长正在想一想..."
-        case .working: return "橘长正在翻找资料..."
-        case .success: return "橘长把毛线球理顺啦"
-        case .happy: return "橘长很开心"
-        }
+        return connectionManager.agentState.description
     }
 }
 

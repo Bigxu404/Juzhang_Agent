@@ -2,7 +2,6 @@ import SwiftUI
 
 enum TabSelection {
     case chat
-    case memory
     case settings
 }
 
@@ -16,18 +15,17 @@ struct MainTabView: View {
                 switch selection {
                 case .chat:
                     ChatView()
-                case .memory:
-                    MemoryVaultView()
                 case .settings:
                     SettingsView()
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             
-            // 2. 自定义底部导航栏 (Bottom Nav)
+            // 2. 自定义底部导航栏 (悬浮毛玻璃)
             CustomBottomNav(selection: $selection)
+                .padding(.bottom, 24) // 悬浮距离底部的间距
+                .ignoresSafeArea(.keyboard, edges: .bottom)
         }
-        .ignoresSafeArea(.keyboard, edges: .bottom)
     }
 }
 
@@ -44,40 +42,18 @@ struct CustomBottomNav: View {
             )
             
             TabBarItem(
-                icon: "archivebox.fill",
-                title: "藏宝库",
-                isSelected: selection == .memory,
-                action: { selection = .memory }
-            )
-            
-            TabBarItem(
                 icon: "gearshape.fill",
                 title: "设置",
                 isSelected: selection == .settings,
                 action: { selection = .settings }
             )
         }
-        .padding(.horizontal, 24)
-        .padding(.top, 12)
-        .padding(.bottom, safeAreaBottom + 8)
-        .background(
-            AppTheme.surface1.opacity(0.95)
-                .shadow(color: AppTheme.strokeSoft, radius: 16, x: 0, y: -4)
-        )
-        .overlay(
-            Rectangle()
-                .frame(height: 1)
-                .foregroundColor(AppTheme.strokeLighter),
-            alignment: .top
-        )
-    }
-    
-    private var safeAreaBottom: CGFloat {
-        let window = UIApplication.shared.connectedScenes
-            .compactMap { $0 as? UIWindowScene }
-            .flatMap { $0.windows }
-            .first { $0.isKeyWindow }
-        return window?.safeAreaInsets.bottom ?? 0
+        .padding(.horizontal, 32)
+        .padding(.vertical, 12)
+        .background(.ultraThinMaterial)
+        .clipShape(Capsule())
+        .shadow(color: Color.black.opacity(0.15), radius: 20, x: 0, y: 8)
+        .padding(.horizontal, 64) // 控制悬浮条宽度
     }
 }
 

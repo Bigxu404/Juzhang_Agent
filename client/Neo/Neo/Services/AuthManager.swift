@@ -7,6 +7,7 @@ class AuthManager: ObservableObject {
     @Published var isAuthenticated: Bool = false
     @Published var token: String? = nil
     @Published var username: String? = nil
+    @Published var modelName: String = "MiniMax 2.7"
     
     private let baseURL = "http://localhost:3000/api/auth"
     
@@ -17,6 +18,13 @@ class AuthManager: ObservableObject {
             self.token = savedToken
             self.username = savedUsername
             self.isAuthenticated = true
+            
+            if let savedModelName = UserDefaults.standard.string(forKey: "authModelName") {
+                self.modelName = savedModelName
+            }
+            
+            // 如果本地有 token，直接初始化 WebSocket 连接
+            AgentConnectionManager.shared.connect(token: savedToken)
         }
     }
     
@@ -77,12 +85,20 @@ class AuthManager: ObservableObject {
                    let userDict = json["user"] as? [String: Any],
                    let username = userDict["username"] as? String {
                     
+                    let modelName = userDict["modelName"] as? String ?? "MiniMax 2.7"
+                    
                     DispatchQueue.main.async {
                         self.token = token
                         self.username = username
+                        self.modelName = modelName
                         self.isAuthenticated = true
                         UserDefaults.standard.set(token, forKey: "authToken")
                         UserDefaults.standard.set(username, forKey: "authUsername")
+                        UserDefaults.standard.set(modelName, forKey: "authModelName")
+                        
+                        // 登录成功后，初始化 WebSocket 连接
+                        AgentConnectionManager.shared.connect(token: token)
+                        
                         completion(.success(()))
                     }
                 } else {

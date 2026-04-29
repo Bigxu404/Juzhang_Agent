@@ -21,7 +21,15 @@ export async function runAgent(
   const userApiKey = ctx.apiKey;
   
   if (!userApiKey || userApiKey.trim() === '') {
-    await ctx.sendChunk('\n(系统提示：请先前往“设置”页面配置您的 API Key，唤醒我的大脑。)');
+    // 为方便测试，如果没有提供 API Key，直接进行本地 Mock 流式输出，模拟 Agent 框架运行
+    await ctx.sendState(AgentState.THINKING, '思考中...');
+    await new Promise(r => setTimeout(r, 1000));
+    await ctx.sendState(AgentState.WORKING, '调用工具：全网搜索');
+    await new Promise(r => setTimeout(r, 1500));
+    await ctx.sendState(AgentState.SUCCESS, '任务执行完成');
+    await new Promise(r => setTimeout(r, 500));
+    await ctx.sendChunk('你好！我是 MiniMax 2.7 驱动的数字老友。虽然你还没有配置真实的 API Key，但我为你模拟了一次完整的 Agent 思考和工具调用流程，这证明了前后端打通是完全正常的！你可以去设置页配置真实的 Key 来解锁完全体。');
+    await ctx.sendState(AgentState.IDLE, '等待输入...');
     return;
   }
 

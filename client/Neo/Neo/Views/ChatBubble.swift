@@ -59,17 +59,7 @@ struct ChatBubble: View {
             
             // 用户头像占位 (靠右)
             if type == .user {
-                // 暂时用一个简单的圆形代替用户头像
-                Circle()
-                    .fill(AppTheme.surface1)
-                    .frame(width: 36, height: 36)
-                    .overlay(
-                        Text("我")
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundColor(AppTheme.textSecondary)
-                    )
-                    .shadow(color: AppTheme.strokeSoft, radius: 4, x: 0, y: 2)
-                    .padding(.top, 4)
+                // 不显示用户头像
             } else {
                 Spacer(minLength: 40) // 助手消息右侧留白
             }
