@@ -33,10 +33,14 @@ export class AgentLoop {
               tools,
               modelName,
               async (chunk) => {
+                if (this.ctx.signal?.aborted) {
+                    throw new Error("AbortError");
+                }
                 await this.ctx.sendChunk(chunk);
                 this.ctx.sendEvent({ type: 'text_chunk', text: chunk });
                 finalResponseStr += chunk;
-              }
+              },
+              this.ctx.signal
             );
             break; // success
           } catch (err: any) {
@@ -68,20 +72,42 @@ export class AgentLoop {
           const { id, name, input } = tc;
           
           this.ctx.sendState(AgentState.WORKING, `正在执行: ${name}...`);
+          
+          // Debug Mode: 发送调用参数卡片到前端
+          const debugStart = `\n<tool>【调用链路监控】开始执行\n目标工具: ${name}\n请求参数: ${JSON.stringify(input, null, 2)}</tool>\n`;
+          await this.ctx.sendChunk(debugStart);
+          finalResponseStr += debugStart;
+          
+          const startTime = Date.now();
           const resultStr = await this.dispatcher.dispatch(name, input, this.ctx);
+          const duration = Date.now() - startTime;
+          
+          // Debug Mode: 发送调用结果卡片到前端
+          const debugEnd = `\n<tool>【调用链路监控】执行完毕\n状态: 成功\n耗时: ${duration}ms\n返回预览: \n${resultStr.length > 500 ? resultStr.substring(0, 500) + "..." : resultStr}</tool>\n`;
+          await this.ctx.sendChunk(debugEnd);
+          finalResponseStr += debugEnd;
           
           messages.push(activeAdapter.formatToolResult(id, resultStr));
         }
       } catch (e: any) {
         llmSpan?.end({ error: e.message });
+        if (e.message === 'AbortError' || e.name === 'AbortError') {
+          const msg = '\n[已由用户中断]';
+          await this.ctx.sendChunk(msg);
+          finalResponseStr += msg;
+          break;
+        }
         if (e.message === 'DENIAL_LIMIT_REACHED') {
           const msg = '\n好的，由于连续多次取消授权，我已经停止了该操作。我们聊点别的吧。';
           await this.ctx.sendChunk(msg);
           finalResponseStr += msg;
           break;
         }
-        await this.ctx.sendChunk(`\n(发生系统错误: ${e.message})`);
-        finalResponseStr += `\n(发生系统错误: ${e.message})`;
+        
+        // Debug Mode: 捕获报错卡片
+        const debugErr = `\n<tool>【调用链路监控】系统异常\n错误类型: ${e.name || 'Error'}\n报错详情: ${e.message}\n请检查网络环境或提供商服务是否稳定。</tool>\n`;
+        await this.ctx.sendChunk(debugErr);
+        finalResponseStr += debugErr;
         break;
       }
     }

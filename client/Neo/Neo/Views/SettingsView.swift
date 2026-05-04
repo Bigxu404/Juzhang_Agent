@@ -2,7 +2,7 @@ import SwiftUI
 
 struct SettingsView: View {
     @StateObject private var authManager = AuthManager.shared
-    @State private var apiKey: String = ""
+    @State private var apiKeyInput: String = ""
     
     var body: some View {
         ZStack {
@@ -55,39 +55,64 @@ struct SettingsView: View {
                                 .padding(.leading, 4)
                             
                             VStack(spacing: 0) {
-                                HStack(spacing: 16) {
-                                    Image(systemName: "cpu")
-                                        .font(.system(size: 20))
-                                        .foregroundColor(AppTheme.textTertiary)
-                                        .frame(width: 24)
-                                    Text("默认推理模型")
-                                        .font(.system(size: 16, weight: .regular))
-                                        .foregroundColor(AppTheme.textPrimary)
-                                    Spacer()
-                                    Text(AuthManager.shared.modelName)
-                                        .font(.system(size: 14))
+                                Menu {
+                                    Button("MiniMax-M2.7") { authManager.updateConfig(apiKey: nil, modelName: "MiniMax-M2.7") }
+                                    Button("Claude 3 Haiku") { authManager.updateConfig(apiKey: nil, modelName: "Claude 3 Haiku") }
+                                    Button("GPT-4o") { authManager.updateConfig(apiKey: nil, modelName: "GPT-4o") }
+                                    Button("DeepSeek-R1") { authManager.updateConfig(apiKey: nil, modelName: "DeepSeek-R1") }
+                                } label: {
+                                    HStack(spacing: 16) {
+                                        Image(systemName: "cpu")
+                                            .font(.system(size: 20))
+                                            .foregroundColor(AppTheme.textTertiary)
+                                            .frame(width: 24)
+                                        Text("默认推理模型")
+                                            .font(.system(size: 16, weight: .regular))
+                                            .foregroundColor(AppTheme.textPrimary)
+                                        Spacer()
+                                        HStack(spacing: 4) {
+                                            Text(authManager.modelName)
+                                                .font(.system(size: 14))
+                                            Image(systemName: "chevron.up.chevron.down")
+                                                .font(.system(size: 12))
+                                        }
                                         .foregroundColor(AppTheme.textSecondary)
+                                    }
+                                    .padding(.horizontal, 20)
+                                    .padding(.vertical, 16)
+                                    .contentShape(Rectangle())
                                 }
-                                .padding(.horizontal, 20)
-                                .padding(.vertical, 16)
+                                .buttonStyle(PlainButtonStyle())
                                 
                                 Divider().background(AppTheme.strokeLighter).padding(.leading, 44)
                                 
-                                HStack(spacing: 16) {
-                                    Image(systemName: "cpu")
-                                        .font(.system(size: 20))
-                                        .foregroundColor(AppTheme.textTertiary)
-                                        .frame(width: 24)
-                                    Text("后台冲浪子模型")
-                                        .font(.system(size: 16, weight: .regular))
-                                        .foregroundColor(AppTheme.textPrimary)
-                                    Spacer()
-                                    Text("Claude 3 Haiku")
-                                        .font(.system(size: 14))
+                                Menu {
+                                    Button("Claude 3 Haiku") { authManager.updateConfig(apiKey: nil, modelName: nil, subModelName: "Claude 3 Haiku") }
+                                    Button("MiniMax-M2.7") { authManager.updateConfig(apiKey: nil, modelName: nil, subModelName: "MiniMax-M2.7") }
+                                    Button("GPT-4o-mini") { authManager.updateConfig(apiKey: nil, modelName: nil, subModelName: "GPT-4o-mini") }
+                                } label: {
+                                    HStack(spacing: 16) {
+                                        Image(systemName: "cpu")
+                                            .font(.system(size: 20))
+                                            .foregroundColor(AppTheme.textTertiary)
+                                            .frame(width: 24)
+                                        Text("后台冲浪子模型")
+                                            .font(.system(size: 16, weight: .regular))
+                                            .foregroundColor(AppTheme.textPrimary)
+                                        Spacer()
+                                        HStack(spacing: 4) {
+                                            Text(authManager.subModelName)
+                                                .font(.system(size: 14))
+                                            Image(systemName: "chevron.up.chevron.down")
+                                                .font(.system(size: 12))
+                                        }
                                         .foregroundColor(AppTheme.textSecondary)
+                                    }
+                                    .padding(.horizontal, 20)
+                                    .padding(.vertical, 16)
+                                    .contentShape(Rectangle())
                                 }
-                                .padding(.horizontal, 20)
-                                .padding(.vertical, 16)
+                                .buttonStyle(PlainButtonStyle())
                                 
                                 Divider().background(AppTheme.strokeLighter).padding(.leading, 44)
                                 
@@ -96,12 +121,22 @@ struct SettingsView: View {
                                         .font(.system(size: 20))
                                         .foregroundColor(AppTheme.textTertiary)
                                         .frame(width: 24)
-                                    SecureField("点击配置 API Key", text: $apiKey)
+                                    SecureField("点击配置 API Key", text: $apiKeyInput)
                                         .font(.system(size: 16, weight: .regular))
                                         .foregroundColor(AppTheme.textPrimary)
-                                        .onChange(of: apiKey) { _, newValue in
-                                            // TODO: Save to backend via API
+                                        .onSubmit {
+                                            authManager.updateConfig(apiKey: apiKeyInput, modelName: nil)
                                         }
+                                        
+                                    if !apiKeyInput.isEmpty && apiKeyInput != authManager.apiKey {
+                                        Button(action: {
+                                            authManager.updateConfig(apiKey: apiKeyInput, modelName: nil)
+                                        }) {
+                                            Text("保存")
+                                                .font(.system(size: 14, weight: .medium))
+                                                .foregroundColor(AppTheme.brandOrange)
+                                        }
+                                    }
                                 }
                                 .padding(.horizontal, 20)
                                 .padding(.vertical, 16)
@@ -120,6 +155,29 @@ struct SettingsView: View {
                                 SettingRow(icon: "brain.head.profile", title: "长期记忆", isEnabled: true)
                                 Divider().background(AppTheme.strokeLighter).padding(.leading, 44)
                                 SettingRow(icon: "clock.arrow.circlepath", title: "上下文自动压缩", isEnabled: true)
+                                Divider().background(AppTheme.strokeLighter).padding(.leading, 44)
+                                
+                                Button(action: {
+                                    authManager.clearMemories { _ in
+                                        print("Memories cleared")
+                                        // TODO: Show toast or alert
+                                    }
+                                }) {
+                                    HStack(spacing: 16) {
+                                        Image(systemName: "trash")
+                                            .font(.system(size: 20))
+                                            .foregroundColor(.red)
+                                            .frame(width: 24)
+                                        Text("清空所有长期记忆")
+                                            .font(.system(size: 16, weight: .regular))
+                                            .foregroundColor(.red)
+                                        Spacer()
+                                    }
+                                    .padding(.horizontal, 20)
+                                    .padding(.vertical, 16)
+                                    .contentShape(Rectangle())
+                                }
+                                .buttonStyle(PlainButtonStyle())
                             }
                             .softCard()
                         }
@@ -165,6 +223,15 @@ struct SettingsView: View {
                     .padding(.horizontal, 20)
                     .padding(.top, 8)
                 }
+            }
+        }
+        .onAppear {
+            authManager.fetchUserConfig()
+            apiKeyInput = authManager.apiKey
+        }
+        .onReceive(authManager.$apiKey) { newKey in
+            if !newKey.isEmpty && apiKeyInput.isEmpty {
+                apiKeyInput = newKey
             }
         }
     }

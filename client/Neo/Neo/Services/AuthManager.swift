@@ -8,8 +8,11 @@ class AuthManager: ObservableObject {
     @Published var token: String? = nil
     @Published var username: String? = nil
     @Published var modelName: String = "MiniMax 2.7"
+    @Published var subModelName: String = "Claude 3 Haiku"
+    @Published var apiKey: String = ""
     
     private let baseURL = "http://localhost:3000/api/auth"
+    private let apiBaseURL = "http://localhost:3000/api/user"
     
     private init() {
         // Load token from UserDefaults if exists
@@ -21,6 +24,14 @@ class AuthManager: ObservableObject {
             
             if let savedModelName = UserDefaults.standard.string(forKey: "authModelName") {
                 self.modelName = savedModelName
+            }
+            
+            if let savedSubModelName = UserDefaults.standard.string(forKey: "authSubModelName") {
+                self.subModelName = savedSubModelName
+            }
+            
+            if let savedApiKey = UserDefaults.standard.string(forKey: "authApiKey") {
+                self.apiKey = savedApiKey
             }
             
             // 如果本地有 token，直接初始化 WebSocket 连接
@@ -86,15 +97,21 @@ class AuthManager: ObservableObject {
                    let username = userDict["username"] as? String {
                     
                     let modelName = userDict["modelName"] as? String ?? "MiniMax 2.7"
+                    let subModelName = userDict["subModelName"] as? String ?? "Claude 3 Haiku"
+                    let apiKey = userDict["apiKey"] as? String ?? ""
                     
                     DispatchQueue.main.async {
                         self.token = token
                         self.username = username
                         self.modelName = modelName
+                        self.subModelName = subModelName
+                        self.apiKey = apiKey
                         self.isAuthenticated = true
                         UserDefaults.standard.set(token, forKey: "authToken")
                         UserDefaults.standard.set(username, forKey: "authUsername")
                         UserDefaults.standard.set(modelName, forKey: "authModelName")
+                        UserDefaults.standard.set(subModelName, forKey: "authSubModelName")
+                        UserDefaults.standard.set(apiKey, forKey: "authApiKey")
                         
                         // 登录成功后，初始化 WebSocket 连接
                         AgentConnectionManager.shared.connect(token: token)
@@ -107,6 +124,91 @@ class AuthManager: ObservableObject {
             } catch {
                 let message = ErrorLocalizer.message(from: error, fallback: actionText)
                 DispatchQueue.main.async { completion(.failure(AppDisplayError(message: message))) }
+            }
+        }.resume()
+    }
+    
+    func fetchUserConfig() {
+        guard let url = URL(string: apiBaseURL + "/me"),
+              let token = self.token else { return }
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        
+        URLSession.shared.dataTask(with: request) { data, response, error in
+            if let data = data,
+               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                DispatchQueue.main.async {
+                    if let newModelName = json["modelName"] as? String {
+                        self.modelName = newModelName
+                        UserDefaults.standard.set(newModelName, forKey: "authModelName")
+                    }
+                    if let newSubModelName = json["subModelName"] as? String {
+                        self.subModelName = newSubModelName
+                        UserDefaults.standard.set(newSubModelName, forKey: "authSubModelName")
+                    }
+                    if let newApiKey = json["apiKey"] as? String {
+                        self.apiKey = newApiKey
+                        UserDefaults.standard.set(newApiKey, forKey: "authApiKey")
+                    }
+                }
+            }
+        }.resume()
+    }
+    
+    func updateConfig(apiKey: String?, modelName: String?, subModelName: String? = nil, completion: ((Result<Void, Error>) -> Void)? = nil) {
+        guard let url = URL(string: apiBaseURL + "/config"),
+              let token = self.token else { return }
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "PUT"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        
+        var body: [String: Any] = [:]
+        if let apiKey = apiKey { body["apiKey"] = apiKey }
+        if let modelName = modelName { body["modelName"] = modelName }
+        if let subModelName = subModelName { body["subModelName"] = subModelName }
+        
+        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        
+        URLSession.shared.dataTask(with: request) { data, response, error in
+            if let data = data,
+               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                DispatchQueue.main.async {
+                    if let newModelName = json["modelName"] as? String {
+                        self.modelName = newModelName
+                        UserDefaults.standard.set(newModelName, forKey: "authModelName")
+                    }
+                    if let newSubModelName = json["subModelName"] as? String {
+                        self.subModelName = newSubModelName
+                        UserDefaults.standard.set(newSubModelName, forKey: "authSubModelName")
+                    }
+                    if let newApiKey = json["apiKey"] as? String {
+                        self.apiKey = newApiKey
+                        UserDefaults.standard.set(newApiKey, forKey: "authApiKey")
+                    }
+                    completion?(.success(()))
+                }
+            } else {
+                DispatchQueue.main.async {
+                    completion?(.failure(AppDisplayError(message: "更新配置失败")))
+                }
+            }
+        }.resume()
+    }
+    
+    func clearMemories(completion: ((Result<Void, Error>) -> Void)? = nil) {
+        guard let url = URL(string: apiBaseURL + "/memories"),
+              let token = self.token else { return }
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "DELETE"
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        
+        URLSession.shared.dataTask(with: request) { data, response, error in
+            DispatchQueue.main.async {
+                completion?(.success(()))
             }
         }.resume()
     }

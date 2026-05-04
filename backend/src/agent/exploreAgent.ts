@@ -8,7 +8,8 @@
  */
 
 import OpenAI from 'openai';
-import { search } from 'duck-duck-scrape';
+import axios from 'axios';
+import * as cheerio from 'cheerio';
 import fs from 'fs';
 import path from 'path';
 
@@ -90,27 +91,94 @@ export async function runExploreAgent(task: string, ctx?: AgentContext): Promise
     const choice = response.choices[0];
     
     if (choice.message.tool_calls && choice.message.tool_calls.length > 0) {
-      const tc = choice.message.tool_calls[0] as any;
-      const args = JSON.parse(tc.function.arguments);
-      console.log(`[Explore Agent] Calling WebSearch with query: ${args.query}`);
-      
-      // 真实调用 DuckDuckGo 搜索
-      let searchResult = "";
-      try {
-        const searchResults = await search(args.query);
-        const topResults = searchResults.results.slice(0, 4).map(r => `Title: ${r.title}\nSnippet: ${r.description}\nURL: ${r.url}`).join('\n\n');
-        searchResult = `Search Results for "${args.query}":\n\n${topResults}`;
-      } catch (err: any) {
-        console.error(`[Explore Agent] WebSearch failed: ${err.message}`);
-        searchResult = `Search failed: ${err.message}`;
+      const toolCallMessage = { ...choice.message };
+      if (!toolCallMessage.content) {
+        toolCallMessage.content = "";
       }
-      
-      messages.push(choice.message as any);
-      messages.push({
-        role: 'tool',
-        tool_call_id: tc.id,
-        content: searchResult
-      } as any);
+      messages.push(toolCallMessage as any);
+
+      // 遍历所有的 tool_calls，逐个执行并返回结果
+      for (const tc of choice.message.tool_calls) {
+        const args = JSON.parse((tc as any).function.arguments);
+        console.log(`[Explore Agent] Calling WebSearch with query: ${args.query}`);
+        
+        let searchResult = "";
+        const tavilyApiKey = process.env.TAVILY_API_KEY;
+        
+        if (tavilyApiKey && tavilyApiKey.trim() !== '') {
+            try {
+                console.log(`[Explore Agent] Using Tavily Search API for: ${args.query}`);
+                const response = await axios.post('https://api.tavily.com/search', {
+                    api_key: tavilyApiKey,
+                    query: args.query,
+                    search_depth: "advanced",
+                    include_answer: false,
+                    include_raw_content: false,
+                    max_results: 5
+                }, { timeout: 15000 });
+                
+                if (response.data && response.data.results) {
+                    let extractedTexts: string[] = [];
+                    for (const res of response.data.results) {
+                        extractedTexts.push(`Title: ${res.title}\nContent: ${res.content}\nURL: ${res.url}`);
+                    }
+                    if (extractedTexts.length > 0) {
+                        searchResult = `[Tavily Search Results] for "${args.query}":\n\n${extractedTexts.join('\n\n')}`;
+                        console.log(`[Explore Agent] Successfully fetched from Tavily.`);
+                    }
+                }
+            } catch (err: any) {
+                console.error(`[Explore Agent] Tavily Search failed: ${err.message}`);
+            }
+        }
+        
+        // 兜底方案：如果没配置 Tavily Key 或者 Tavily 挂了，降级到国内免墙的必应抓取
+        if (!searchResult) {
+            console.log(`[Explore Agent] Using Bing fallback search...`);
+            try {
+                const bingUrl = `https://cn.bing.com/search?q=${encodeURIComponent(args.query)}`;
+                const response = await axios.get(bingUrl, {
+                   headers: {
+                     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+                   },
+                   timeout: 8000 
+                });
+                
+                if (response.data) {
+                     const $ = cheerio.load(response.data);
+                     let extractedTexts: string[] = [];
+                     $('.b_algo').each((i, elem) => {
+                         if (i >= 5) return;
+                         const title = $(elem).find('h2').text().trim();
+                         const snippet = $(elem).find('.b_caption p').text().trim() || $(elem).find('.b_algoSlug').text().trim() || $(elem).text().trim();
+                         if (title && snippet) {
+                             extractedTexts.push(`Title: ${title}\nSnippet: ${snippet}`);
+                         }
+                     });
+                     
+                     const textOnly = extractedTexts.join('\n\n');
+                     if (textOnly) {
+                         searchResult = `[Bing Search Results] for "${args.query}":\n\n${textOnly}`;
+                     } else {
+                         const bodyText = $('body').text().replace(/\s+/g, ' ').substring(0, 3000);
+                         searchResult = `[Bing Search Results] for "${args.query}":\n\n${bodyText}`;
+                     }
+                }
+            } catch (bingErr: any) {
+                console.log(`[Explore Agent] Bing fallback failed: ${bingErr.message}`);
+            }
+        }
+        
+        if (!searchResult) {
+            searchResult = `Search Results for "${args.query}":\nNo abstract found. Network timeout or all public instances failed.`;
+        }
+
+        messages.push({
+          role: 'tool',
+          tool_call_id: tc.id,
+          content: searchResult
+        } as any);
+      }
 
       const finalResponse = await openai.chat.completions.create({
           model: modelName,

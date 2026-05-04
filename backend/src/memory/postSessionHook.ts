@@ -2,25 +2,26 @@ import { memoryManager } from './DatabaseMemory';
 import { prisma } from '../utils/db';
 import OpenAI from 'openai';
 
-const openai = new OpenAI({
-  apiKey: process.env.MINIMAX_API_KEY || process.env.OPENAI_API_KEY || 'dummy',
-  baseURL: process.env.MINIMAX_API_KEY ? 'https://api.minimax.chat/v1' : undefined
-});
-
 /**
  * Task 3.2.2: 会话流水账写入钩子 (Post-Session Hook)
  * 在每次 Agent Loop 结束后，将关键的信息提取并存入向量数据库作为长期情节记忆 (Episodic Memory)。
  */
-export async function runPostSessionHook(sessionId: string, userId: string, query: string, agentResponse: string, userModelName?: string) {
+export async function runPostSessionHook(sessionId: string, userId: string, query: string, agentResponse: string, userModelName?: string, userApiKey?: string) {
     try {
         console.log(`[Post-Session Hook] Analyzing conversation for episodic memory...`);
         
         // 1. 生成会话 AI 标题（如果当前还是默认的"新对话"）
         try {
             const session = await prisma.session.findUnique({ where: { id: sessionId } });
-            if (session && session.title === '新对话' && query.length > 1) {
+            if (session && session.title === '新对话' && query.length > 1 && userApiKey) {
                 console.log(`[Post-Session Hook] Generating AI title for new session...`);
-                const modelName = userModelName || process.env.MODEL_NAME || 'abab6.5s-chat';
+                
+                const openai = new OpenAI({
+                  apiKey: userApiKey,
+                  baseURL: 'https://api.minimax.chat/v1'
+                });
+                
+                const modelName = userModelName || process.env.MODEL_NAME || 'MiniMax-M2.7';
                 const response = await openai.chat.completions.create({
                     model: modelName,
                     messages: [

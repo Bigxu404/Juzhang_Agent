@@ -85,6 +85,9 @@ class AgentConnectionManager: ObservableObject {
         // Handle Socket.IO Connect success packet
         if text.starts(with: "40") {
             print("Socket.IO Namespace Connected")
+            DispatchQueue.main.async {
+                self.fetchSessions()
+            }
             return
         }
         
@@ -117,6 +120,7 @@ class AgentConnectionManager: ObservableObject {
     private func processEvent(_ event: String, payload: Any) {
         switch event {
         case "SESSIONS_LIST":
+            print("Received SESSIONS_LIST payload: \(payload)")
             if let dict = payload as? [String: Any], let sessionsArray = dict["sessions"] as? [[String: Any]] {
                 self.sessions = sessionsArray.compactMap { s in
                     guard let id = s["id"] as? String,
@@ -127,20 +131,26 @@ class AgentConnectionManager: ObservableObject {
             } else if let sessionsArray = payload as? [[String: Any]] { // Fallback for older backend
                 self.sessions = sessionsArray.compactMap { s in
                     guard let id = s["id"] as? String,
-                          let title = s["title"] as? String else { return nil }
+                          let title = s["title"] as? String else {
+                        print("Failed to parse session: \(s)")
+                        return nil
+                    }
                     let updatedAt = s["updatedAt"] as? String ?? ""
                     return ChatSession(id: id, title: title, updatedAt: updatedAt)
                 }
+            } else {
+                print("Could not parse SESSIONS_LIST payload as array or dict")
             }
+            print("Parsed sessions count: \(self.sessions.count)")
             
-        case "SESSION_LOADED":
+                case "SESSION_LOADED":
             if let dict = payload as? [String: Any], let loadedMessages = dict["messages"] as? [[String: Any]] {
                 self.messages = loadedMessages.compactMap { m in
                     guard let roleStr = m["role"] as? String,
                           let content = m["content"] as? String else { return nil }
                     let role: MessageRole = roleStr == "user" ? .user : (roleStr == "system" ? .system : .agent)
-                    let newMsg = UIChatMessage(text: content, type: role == .user ? .user : .agent, state: nil)
-                    // newMsg.components = MessageParser.parse(content)
+                    var newMsg = UIChatMessage(text: content, type: role == .user ? .user : .agent, state: nil)
+                    newMsg.components = MessageParser.parse(content)
                     return newMsg
                 }
             }
@@ -162,6 +172,24 @@ class AgentConnectionManager: ObservableObject {
                 self.appendToLastAgentMessage(text)
             }
             
+        case "DONE":
+            // 取消 loading / isStreaming 标记
+            if let lastIndex = self.messages.lastIndex(where: { $0.type == .agent }) {
+                self.messages[lastIndex].isStreaming = false
+            }
+            
+        case "AGENT_ASK_HUMAN":
+            guard let dict = payload as? [String: Any] else { return }
+            if let question = dict["question"] as? String {
+                let options = dict["options"] as? [String] ?? []
+                // 创建一个特殊的选项卡片气泡
+                var msg = UIChatMessage(text: question, type: .agent, state: nil, isStreaming: false)
+                msg.components = [.choice(question: question, options: options)]
+                self.messages.append(msg)
+                
+                self.agentState = OldAgentState(status: "SUSPENDED", description: "等待你的选择...")
+            }
+            
         case "PERMISSION_REQ":
             guard let dict = payload as? [String: Any] else { return }
             if let tool = dict["tool"] as? String, let desc = dict["desc"] as? String {
@@ -175,15 +203,80 @@ class AgentConnectionManager: ObservableObject {
         }
     }
     
-    func sendMessage(_ text: String) {
+    func sendMessage(_ text: String, attachments: [String] = []) {
         let newMsg = UIChatMessage(text: text, type: .user, state: nil)
         self.messages.append(newMsg)
         
         // Prepare empty agent message for streaming chunks
-        self.messages.append(UIChatMessage(text: "", type: .agent, state: nil))
+        var loadingMsg = UIChatMessage(text: "", type: .agent, state: nil, isStreaming: true)
+        loadingMsg.components = [.text("")]
+        self.messages.append(loadingMsg)
         
-        let payload: [String: Any] = ["content": text]
+        var payload: [String: Any] = ["content": text]
+        if !attachments.isEmpty {
+            payload["attachments"] = attachments
+        }
+        
+        if let loc = LocationManager.shared.currentLocationName {
+            payload["location"] = loc
+        }
+        
         sendSocketIOEvent(event: "MESSAGE", payload: payload)
+    }
+    
+    func uploadFile(fileURL: URL, sessionId: String?, completion: @escaping (Result<String, Error>) -> Void) {
+        guard let token = UserDefaults.standard.string(forKey: "jwtToken") else {
+            completion(.failure(NSError(domain: "Auth", code: 401, userInfo: [NSLocalizedDescriptionKey: "No token"])))
+            return
+        }
+        
+        let requestURL = URL(string: "http://localhost:3000/api/files/upload")!
+        var request = URLRequest(url: requestURL)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        
+        let boundary = UUID().uuidString
+        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+        
+        var data = Data()
+        
+        if let sessionId = sessionId {
+            data.append("--\(boundary)\r\n".data(using: .utf8)!)
+            data.append("Content-Disposition: form-data; name=\"sessionId\"\r\n\r\n".data(using: .utf8)!)
+            data.append("\(sessionId)\r\n".data(using: .utf8)!)
+        }
+        
+        data.append("--\(boundary)\r\n".data(using: .utf8)!)
+        let filename = fileURL.lastPathComponent
+        data.append("Content-Disposition: form-data; name=\"file\"; filename=\"\(filename)\"\r\n".data(using: .utf8)!)
+        data.append("Content-Type: application/octet-stream\r\n\r\n".data(using: .utf8)!)
+        
+        guard let fileData = try? Data(contentsOf: fileURL) else {
+            completion(.failure(NSError(domain: "File", code: 400, userInfo: [NSLocalizedDescriptionKey: "Cannot read file"])))
+            return
+        }
+        data.append(fileData)
+        data.append("\r\n--\(boundary)--\r\n".data(using: .utf8)!)
+        
+        let task = URLSession.shared.uploadTask(with: request, from: data) { responseData, response, error in
+            if let error = error {
+                completion(.failure(error))
+                return
+            }
+            if let responseData = responseData,
+               let json = try? JSONSerialization.jsonObject(with: responseData) as? [String: Any],
+               let fileDict = json["file"] as? [String: Any],
+               let url = fileDict["url"] as? String {
+                completion(.success(url))
+            } else {
+                completion(.failure(NSError(domain: "Network", code: 500, userInfo: [NSLocalizedDescriptionKey: "Invalid response"])))
+            }
+        }
+        task.resume()
+    }
+    
+    func stopGeneration() {
+        sendSocketIOEvent(event: "STOP_GENERATION", payload: [:])
     }
     
     func clearSession() {
@@ -216,24 +309,44 @@ class AgentConnectionManager: ObservableObject {
         self.messages.append(UIChatMessage(text: "", type: .agent, state: nil)) // Prepare for next agent response
     }
     
+    func sendHumanAnswer(_ answer: String) {
+        let payload: [String: Any] = ["answer": answer]
+        sendSocketIOEvent(event: "HUMAN_ANSWER", payload: payload)
+        
+        // 自己发一条消息记录
+        let newMsg = UIChatMessage(text: answer, type: .user, state: nil)
+        self.messages.append(newMsg)
+        
+        // 准备下一个气泡
+        var loadingMsg = UIChatMessage(text: "", type: .agent, state: nil, isStreaming: true)
+        loadingMsg.components = [.text("")]
+        self.messages.append(loadingMsg)
+    }
+    
     private func appendToLastAgentMessage(_ text: String) {
         if let lastIndex = self.messages.lastIndex(where: { $0.type == .agent }) {
             self.messages[lastIndex].text += text
-            // self.messages[lastIndex].components = MessageParser.parse(self.messages[lastIndex].text)
+            self.messages[lastIndex].components = MessageParser.parse(self.messages[lastIndex].text)
+            
+            // 确保组件不是空的，如果因为 parser 返回空导致气泡消失，强行插入一个空文本组件以便渲染 loading
+            if self.messages[lastIndex].components.isEmpty {
+                 self.messages[lastIndex].components = [.text("")]
+            }
         } else {
-            let newMsg = UIChatMessage(text: text, type: .agent, state: nil)
-            // newMsg.components = MessageParser.parse(text)
+            var newMsg = UIChatMessage(text: text, type: .agent, state: nil)
+            newMsg.components = MessageParser.parse(text)
+            if newMsg.components.isEmpty {
+                 newMsg.components = [.text("")]
+            }
             self.messages.append(newMsg)
         }
     }
     
     private func appendToolCallToLastAgentMessage(desc: String) {
         if let lastIndex = self.messages.lastIndex(where: { $0.type == .agent }) {
-            // For now, we will just append it to the content as a system note, and the parser will pick it up if we format it nicely,
-            // OR we can just inject a special tag like <tool>desc</tool> into the content so the parser handles it.
             let toolText = "\n<tool>\(desc)</tool>\n"
             self.messages[lastIndex].text += toolText
-            // self.messages[lastIndex].components = MessageParser.parse(self.messages[lastIndex].text)
+            self.messages[lastIndex].components = MessageParser.parse(self.messages[lastIndex].text)
         }
     }
 

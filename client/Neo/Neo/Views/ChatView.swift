@@ -1,4 +1,34 @@
 import SwiftUI
+import UniformTypeIdentifiers
+
+/// 文档选择器
+struct DocumentPicker: UIViewControllerRepresentable {
+    @Binding var selectedURL: URL?
+    
+    func makeUIViewController(context: Context) -> UIDocumentPickerViewController {
+        let picker = UIDocumentPickerViewController(forOpeningContentTypes: [.pdf, .plainText, .commaSeparatedText, .image, UTType(filenameExtension: "xlsx")!, UTType(filenameExtension: "docx")!].compactMap { $0 }, asCopy: true)
+        picker.delegate = context.coordinator
+        return picker
+    }
+    
+    func updateUIViewController(_ uiViewController: UIDocumentPickerViewController, context: Context) {}
+    
+    func makeCoordinator() -> Coordinator {
+        Coordinator(self)
+    }
+    
+    class Coordinator: NSObject, UIDocumentPickerDelegate {
+        var parent: DocumentPicker
+        
+        init(_ parent: DocumentPicker) {
+            self.parent = parent
+        }
+        
+        func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
+            parent.selectedURL = urls.first
+        }
+    }
+}
 
 /// 消息模型
 struct UIChatMessage: Identifiable {
@@ -7,15 +37,20 @@ struct UIChatMessage: Identifiable {
     let type: MessageType
     let state: AgentState?
     var isStreaming: Bool = false
+    var components: [MessageComponent] = []
 }
 
 /// 主聊天界面
 struct ChatView: View {
+    @Binding var showDrawer: Bool
     @State private var inputText = ""
-    @StateObject private var connectionManager = AgentConnectionManager.shared
+    @ObservedObject private var connectionManager = AgentConnectionManager.shared
     @State private var isProcessExpanded = false
-    
-    @State private var showDrawer = false
+    @State private var isNewChatAnimating = false
+    @State private var isShowingDocumentPicker = false
+    @State private var attachedFileURL: URL? = nil
+    @State private var uploadedFileURL: String? = nil
+    @State private var isUploading = false
     
     private var currentState: AgentState {
         switch connectionManager.agentState.status {
@@ -28,35 +63,11 @@ struct ChatView: View {
     }
     
     var body: some View {
-        ZStack(alignment: .leading) {
-            // 原有的内容被包装在主界面层
-            mainContent
-            
-            // 抽屉遮罩层
-            if showDrawer {
-                Color.black.opacity(0.4)
-                    .ignoresSafeArea()
-                    .onTapGesture {
-                        withAnimation(.spring()) {
-                            showDrawer = false
-                        }
-                    }
-                    .zIndex(100)
+        mainContent
+            .onAppear {
+                connectionManager.fetchSessions()
+                LocationManager.shared.requestPermissionAndLocation()
             }
-            
-            // 左侧抽屉内容
-            if showDrawer {
-                sideDrawer
-                    .frame(width: UIScreen.main.bounds.width * 0.75)
-                    .background(AppTheme.surface1)
-                    .transition(.move(edge: .leading))
-                    .zIndex(101)
-                    .ignoresSafeArea(.all, edges: .bottom)
-            }
-        }
-        .onAppear {
-            connectionManager.fetchSessions()
-        }
     }
     
     // 主界面内容抽取出来
@@ -66,39 +77,51 @@ struct ChatView: View {
             AppTheme.bgBase.ignoresSafeArea()
             
             VStack(spacing: 0) {
-                // 1. 顶部导航栏 (标准 iOS 风格)
-                HStack {
-                    Button(action: {
-                        withAnimation { showDrawer = true }
-                    }) {
-                        Image(systemName: "line.3.horizontal")
-                            .font(.system(size: 22, weight: .medium))
-                            .foregroundColor(AppTheme.textPrimary)
+                // 1. 顶部导航栏
+                ZStack {
+                    HStack {
+                        Button(action: {
+                            connectionManager.fetchSessions()
+                            withAnimation { showDrawer = true }
+                        }) {
+                            Image("more")
+                                .resizable()
+                                .scaledToFit()
+                                .frame(height: 44)
+                        }
+                        
+                        Spacer()
+                        
+                        Button(action: {
+                            isNewChatAnimating = true
+                            connectionManager.clearSession()
+                        }) {
+                            ZStack(alignment: .bottomTrailing) {
+                                if isNewChatAnimating {
+                                    Image("newchat2")
+                                        .resizable()
+                                        .scaledToFit()
+                                        .frame(height: 35) // 根据原始比例缩放，使得动画元素同级别大小
+                                        .padding(.bottom, 2) // 底部微调对齐
+                                } else {
+                                    Image("newchat")
+                                        .resizable()
+                                        .scaledToFit()
+                                        .frame(height: 44)
+                                }
+                            }
+                            .frame(width: 80, height: 44, alignment: .bottomTrailing) // 固定包围盒宽度，防止跳动
+                        }
                     }
-                    
-                    Spacer()
                     
                     Text("对话")
                         .font(.system(size: 17, weight: .semibold))
                         .foregroundColor(AppTheme.textPrimary)
-                    
-                    Spacer()
-                    
-                    Button(action: {
-                        connectionManager.clearSession()
-                    }) {
-                        Image(systemName: "square.and.pencil")
-                            .font(.system(size: 22, weight: .medium))
-                            .foregroundColor(AppTheme.textPrimary)
-                    }
                 }
                 .padding(.horizontal, 20)
                 .padding(.top, 16)
-                .padding(.bottom, 12)
-                .background(
-                    AppTheme.bgBase.opacity(0.95)
-                        .ignoresSafeArea(.all, edges: .top)
-                )
+                .padding(.bottom, 8)
+                .background(AppTheme.bgBase.ignoresSafeArea(.all, edges: .top))
                 .zIndex(10)
                 
                 // 2. Message ListView (对话流)
@@ -108,35 +131,34 @@ struct ChatView: View {
                             
                             // 历史消息列表
                             ForEach(connectionManager.messages) { msg in
-                                ChatBubble(text: msg.text, type: msg.type, state: msg.state, isStreaming: msg.isStreaming)
-                                    .padding(.top, msg.id == connectionManager.messages.first?.id ? 24 : 0)
-                            }
-                            
-                            // 过程总览卡片 (模拟思考/工具调用)
-                            if currentState == .thinking || currentState == .working {
-                                // 橘长状态提示
-                                HStack(spacing: 12) {
-                                    StatusAvatarView(state: currentState, size: 28)
-                                    Text(statusText(for: currentState))
-                                        .font(.system(size: 13, weight: .medium))
-                                        .foregroundColor(AppTheme.textSecondary)
-                                    Spacer()
-                                }
-                                .padding(.horizontal, 24)
-                                .padding(.top, 8)
-                                
-                                ProcessTimelineView(
-                                    title: "正在处理",
-                                    subtitle: connectionManager.agentState.description,
-                                    isExpanded: isProcessExpanded,
-                                    state: currentState
-                                )
-                                .onTapGesture {
-                                    withAnimation {
-                                        isProcessExpanded.toggle()
+                                if msg.components.isEmpty {
+                                    ChatBubble(text: msg.text, type: msg.type, state: msg.state, isStreaming: msg.isStreaming, showAvatar: true)
+                                        .padding(.top, msg.id == connectionManager.messages.first?.id ? 24 : 0)
+                                } else {
+                                    VStack(spacing: 4) {
+                                        ForEach(Array(msg.components.enumerated()), id: \.offset) { index, component in
+                                            let showAv = (index == 0)
+                                            let isLastMsg = (msg.id == connectionManager.messages.last?.id)
+                                            let avState = (msg.type == .agent && isLastMsg) ? currentState : .idle
+
+                                            switch component {
+                                            case .text(_):
+                                                MessageComponentWrapper(component: component, message: msg, index: index, avState: avState, showAv: showAv)
+                                            case .thinking(_, _):
+                                                MessageComponentWrapper(component: component, message: msg, index: index, avState: avState, showAv: showAv)
+                                            case .toolCall(_, _, _):
+                                                MessageComponentWrapper(component: component, message: msg, index: index, avState: avState, showAv: showAv)
+                                            case .file(_, _):
+                                                MessageComponentWrapper(component: component, message: msg, index: index, avState: avState, showAv: showAv)
+                                            case .choice(let question, let options):
+                                                MessageComponentWrapper(component: component, message: msg, index: index, avState: avState, showAv: showAv)
+                                            }
+                                        }
                                     }
                                 }
                             }
+                            
+                            /* 过程总览卡片 (模拟思考/工具调用) 已经被干掉，视觉更清爽 */
                             
                             // 底部留白给 BottomNav
                             Color.clear.frame(height: 20).id("bottom")
@@ -152,113 +174,155 @@ struct ChatView: View {
                             proxy.scrollTo("bottom", anchor: .bottom)
                         }
                     }
+                    .frame(maxHeight: .infinity)
                 }
                 
-                // 3. Input Bar (悬浮胶囊风格)
-                HStack(spacing: 12) {
-                    // 附件按钮 (加号)
-                    Button(action: {}) {
-                        Image(systemName: "plus.circle.fill")
-                            .font(.system(size: 24))
-                            .foregroundColor(AppTheme.textTertiary)
+                // 3. Input Bar (单行变双行展开设计)
+                VStack(spacing: 0) {
+                    if let fileURL = attachedFileURL {
+                        HStack {
+                            Image(systemName: "doc.fill")
+                                .foregroundColor(AppTheme.brandOrange)
+                            Text(fileURL.lastPathComponent)
+                                .font(.system(size: 14))
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                            if isUploading {
+                                ProgressView()
+                                    .scaleEffect(0.7)
+                            }
+                            Spacer()
+                            Button(action: {
+                                attachedFileURL = nil
+                                uploadedFileURL = nil
+                            }) {
+                                Image(systemName: "xmark.circle.fill")
+                                    .foregroundColor(.gray)
+                            }
+                        }
+                        .padding(8)
+                        .background(AppTheme.inputBg)
+                        .cornerRadius(8)
+                        .padding(.horizontal, 16)
+                        .padding(.bottom, 4)
                     }
-                    
-                    // 输入框
-                    TextField("给橘长递纸条...", text: $inputText)
-                        .font(.system(size: 16, weight: .regular))
-                        .foregroundColor(AppTheme.textPrimary)
-                    
-                    // 发送按钮 (橘色点睛)
-                    Button(action: sendMessage) {
-                        Image(systemName: "arrow.up")
-                            .font(.system(size: 14, weight: .bold))
-                            .foregroundColor(.white)
-                            .frame(width: 32, height: 32)
-                            .background(AppTheme.brandOrange)
-                            .clipShape(Circle())
-                            .shadow(color: AppTheme.brandOrange.opacity(0.3), radius: 6, x: 0, y: 3)
+
+                    HStack(alignment: .bottom, spacing: 8) {
+                        // 内部左侧功能图标 (加号)
+                        Button(action: { isShowingDocumentPicker = true }) {
+                            Image(systemName: "plus.circle")
+                                .font(.system(size: 24, weight: .light))
+                                .foregroundColor(AppTheme.textSecondary)
+                        }
+                        .padding(.leading, 12)
+                        .padding(.bottom, 8)
+                        
+                        // 中间文本输入：默认单行高度，按需增至两行（不预占大块空白）
+                        TextField("给橘长递纸条...", text: $inputText, axis: .vertical)
+                            .font(.system(size: 16, weight: .regular))
+                            .foregroundColor(AppTheme.textPrimary)
+                            .lineLimit(1...2)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(.vertical, 10)
+                        
+                        // 内部右侧发送/停止（与输入区底部对齐，避免 Spacer 撑满整行高度）
+                        Group {
+                            if currentState == .thinking || currentState == .working {
+                                Button(action: {
+                                    connectionManager.stopGeneration()
+                                }) {
+                                    Image(systemName: "stop.fill")
+                                        .font(.system(size: 12, weight: .bold))
+                                        .foregroundColor(.white)
+                                        .frame(width: 28, height: 28)
+                                        .background(AppTheme.brandOrange)
+                                        .clipShape(Circle())
+                                }
+                            } else {
+                                Button(action: sendMessage) {
+                                    Image(systemName: "arrow.up")
+                                        .font(.system(size: 14, weight: .bold))
+                                        .foregroundColor(.white)
+                                        .frame(width: 28, height: 28)
+                                        .background((inputText.isEmpty && uploadedFileURL == nil) ? AppTheme.textTertiary.opacity(0.3) : AppTheme.brandOrange)
+                                        .clipShape(Circle())
+                                }
+                                .disabled(inputText.isEmpty && uploadedFileURL == nil)
+                                .animation(.easeInOut(duration: 0.2), value: inputText.isEmpty && uploadedFileURL == nil)
+                            }
+                        }
+                        .padding(.trailing, 8)
+                        .padding(.bottom, 8)
                     }
-                    .disabled(inputText.isEmpty)
-                    .opacity(inputText.isEmpty ? 0.5 : 1.0)
+                    .frame(minHeight: 44)
+                    .background(AppTheme.inputBg) // 整个 HStack 变成输入框
+                    .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+                    .padding(.horizontal, 16)
+                    .padding(.top, 8)
+                    .padding(.bottom, 8) // 在 TabBar 上方直接靠着
                 }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 8)
-                .background(.ultraThinMaterial)
-                .clipShape(Capsule())
-                .shadow(color: Color.black.opacity(0.1), radius: 16, x: 0, y: 4)
-                .padding(.horizontal, 20)
-                .padding(.bottom, 96) // 把悬浮胶囊推到 TabBar 上方
+                .background(AppTheme.bgBase) // 和页面背景融为一体
+                .sheet(isPresented: $isShowingDocumentPicker) {
+                    DocumentPicker(selectedURL: $attachedFileURL)
+                }
+                .onChange(of: attachedFileURL) { oldValue, newValue in
+                    if let url = newValue {
+                        uploadSelectedFile(url: url)
+                    }
+                }
             }
         }
     }
     
-    // 左侧抽屉视图
-    private var sideDrawer: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            // 抽屉头部
-            HStack {
-                Text("历史记录")
-                    .font(.system(size: 22, weight: .bold))
-                    .foregroundColor(AppTheme.textPrimary)
-                Spacer()
-                Button(action: {
-                    withAnimation(.spring()) { showDrawer = false }
-                }) {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 24))
-                        .foregroundColor(AppTheme.textTertiary)
+    private func uploadSelectedFile(url: URL) {
+        guard url.startAccessingSecurityScopedResource() else { return }
+        defer { url.stopAccessingSecurityScopedResource() }
+        
+        isUploading = true
+        let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent(url.lastPathComponent)
+        try? FileManager.default.removeItem(at: tempURL)
+        try? FileManager.default.copyItem(at: url, to: tempURL)
+        
+        connectionManager.uploadFile(fileURL: tempURL, sessionId: nil) { result in
+            DispatchQueue.main.async {
+                self.isUploading = false
+                switch result {
+                case .success(let uploadedUrl):
+                    self.uploadedFileURL = "http://localhost:3000\(uploadedUrl)"
+                case .failure(let error):
+                    print("Upload failed: \(error)")
+                    self.attachedFileURL = nil
                 }
-            }
-            .padding(24)
-            .padding(.top, 40)
-            
-            Divider().background(AppTheme.strokeSoft)
-            
-            // 会话列表
-            ScrollView {
-                VStack(spacing: 12) {
-                    if connectionManager.sessions.isEmpty {
-                        Text("暂无历史记录")
-                            .font(.system(size: 14))
-                            .foregroundColor(AppTheme.textSecondary)
-                            .padding(.top, 40)
-                    } else {
-                        ForEach(connectionManager.sessions) { session in
-                            Button(action: {
-                                connectionManager.loadSession(id: session.id)
-                                withAnimation(.spring()) { showDrawer = false }
-                            }) {
-                                VStack(alignment: .leading, spacing: 6) {
-                                    Text(session.title)
-                                        .font(.system(size: 16, weight: .medium))
-                                        .foregroundColor(AppTheme.textPrimary)
-                                        .lineLimit(1)
-                                    Text(session.formattedDate)
-                                        .font(.system(size: 12))
-                                        .foregroundColor(AppTheme.textTertiary)
-                                }
-                                .padding(16)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .background(AppTheme.surface2)
-                                .clipShape(RoundedRectangle(cornerRadius: AppTheme.rM))
-                            }
-                        }
-                    }
-                }
-                .padding(16)
             }
         }
     }
     
     // 实际发送消息逻辑
     private func sendMessage() {
-        guard !inputText.isEmpty else { return }
+        let hasText = !inputText.isEmpty
+        let hasFile = uploadedFileURL != nil
+        guard hasText || hasFile else { return }
         
-        let userText = inputText
+        var userText = inputText
+        if userText.isEmpty && hasFile {
+            userText = "[发送了文件]"
+        }
         inputText = ""
         
+        var attachments: [String] = []
+        if let fileUrl = uploadedFileURL {
+            attachments.append(fileUrl)
+            uploadedFileURL = nil
+            attachedFileURL = nil
+        }
+        
+        // 如果当前是鱼骨头状态，用户发送消息时变回抓鱼状态
+        if isNewChatAnimating {
+            isNewChatAnimating = false
+        }
+        
         // 调用 AgentConnectionManager 实际发送请求到后端
-        connectionManager.sendMessage(userText)
+        connectionManager.sendMessage(userText, attachments: attachments)
         
         withAnimation {
             isProcessExpanded = true
@@ -273,6 +337,6 @@ struct ChatView: View {
 
 struct ChatView_Previews: PreviewProvider {
     static var previews: some View {
-        ChatView()
+        ChatView(showDrawer: .constant(false))
     }
 }

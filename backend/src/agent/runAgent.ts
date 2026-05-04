@@ -43,7 +43,8 @@ export async function runAgent(
     
   // As a fallback, we define a dummy OpenAI adapter (or any secondary configured adapter)
   // that points to a known reliable endpoint or cheaper model if the primary fails.
-  const fallbackAdapter = new OpenAIAdapter(process.env.FALLBACK_API_KEY || userApiKey, 'https://api.openai.com/v1');
+  // 优化：在国内环境如果强连 api.openai.com 会导致 30 秒超时挂起，改用配置的备用或直接失败。
+  const fallbackAdapter = new OpenAIAdapter(process.env.FALLBACK_API_KEY || userApiKey, process.env.FALLBACK_BASE_URL || 'https://api.minimax.chat/v1');
 
   const trace = logger.createTrace(ctx.sessionId, ctx.userId, query);
   ctx.trace = trace;
@@ -74,10 +75,13 @@ export async function runAgent(
           toolCallsStr = JSON.stringify({ id: msg.tool_call_id });
         }
 
+        // 防止某些大模型返回的 role 为 undefined
+        const safeRole = msg.role ? String(msg.role) : 'assistant';
+
         await prisma.message.create({
           data: {
             sessionId: ctx.sessionId,
-            role: msg.role as string,
+            role: safeRole,
             content: contentStr,
             toolCalls: toolCallsStr
           }
@@ -85,7 +89,7 @@ export async function runAgent(
       }
     });
 
-    await runPostSessionHook(ctx.sessionId, ctx.userId, query, finalResponseStr, ctx.modelName);
+    await runPostSessionHook(ctx.sessionId, ctx.userId, query, finalResponseStr, ctx.modelName, userApiKey);
     trace.end({ finalResponseLength: finalResponseStr.length, steps: finalToolCalls.length });
 
   } catch (error: any) {

@@ -9,5 +9,7 @@
 		<key>NSAllowsArbitraryLoads</key>
 		<true/>
 	</dict>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>橘长需要获取您的粗略位置，以便为您提供更精准的本地化天气、周边和行程建议。</string>
 </dict>
 </plist>

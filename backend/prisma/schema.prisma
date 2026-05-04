@@ -1,28 +1,29 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
 datasource db {
   provider  = "postgresql"
   url       = env("DATABASE_URL")
   directUrl = env("DIRECT_URL")
 }
 
-generator client {
-  provider = "prisma-client-js"
-}
-
 model User {
   id            String    @id @default(uuid())
-  username      String    @unique // 用于账号密码登录
-  password      String    // 哈希后的密码
   appleId       String?   @unique
-  deviceId      String?   @unique // 用于访客/匿名登录
-  personaPrompt String?   // 夜间反思更新的专属人设
-  apiKey        String?   // 用户自己填写的 API Key
-  modelName     String?   @default("MiniMax 2.7") // 用户选择的模型名称
+  deviceId      String?   @unique
+  personaPrompt String?
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
-
-  sessions      Session[]
+  password      String
+  username      String    @unique
+  apiKey        String?
+  modelName     String?   @default("MiniMax 2.7")
+  subModelName  String?   @default("MiniMax 2.7")
   memories      Memory[]
-  skills        Skill[]   // 用户自定义上传的 Skills
+  sessions      Session[]
+  skills        Skill[]
+  files         File[]
 }
 
 model Session {
@@ -31,19 +32,32 @@ model Session {
   title     String?
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
-
-  user      User      @relation(fields: [userId], references: [id])
   messages  Message[]
+  files     File[]
+  user      User      @relation(fields: [userId], references: [id])
+}
+
+model File {
+  id        String   @id @default(uuid())
+  userId    String
+  sessionId String?
+  filename  String
+  mimeType  String
+  localPath String
+  url       String
+  size      Int
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id])
+  session   Session? @relation(fields: [sessionId], references: [id])
 }
 
 model Message {
   id        String   @id @default(uuid())
   sessionId String
-  role      String   // 'user' | 'assistant' | 'tool' | 'system'
-  content   String   // 内容
-  toolCalls String?  // JSON string (如果有调用工具)
+  role      String
+  content   String
+  toolCalls String?
   createdAt DateTime @default(now())
-
   session   Session  @relation(fields: [sessionId], references: [id])
 }
 
@@ -51,21 +65,19 @@ model Memory {
   id        String   @id @default(uuid())
   userId    String
   content   String
-  embedding String   // JSON array of floats (SQLite fallback for pgvector)
+  embedding String
   createdAt DateTime @default(now())
-
   user      User     @relation(fields: [userId], references: [id])
 }
 
 model Skill {
   id          String   @id @default(uuid())
   userId      String
-  name        String   // 技能名称，如 "小红书爆款文案"
-  description String   // 技能描述，用于大模型判断何时调用
-  content     String   // 技能的 Prompt SOP 内容
+  name        String
+  description String
+  content     String
   isActive    Boolean  @default(true)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
-
   user        User     @relation(fields: [userId], references: [id])
 }

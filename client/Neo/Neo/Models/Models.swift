@@ -20,10 +20,12 @@ enum ToolStatus: String, Equatable {
     case suspended = "Suspended"
 }
 
-enum MessageComponent: Equatable {
+enum MessageComponent: Equatable, Hashable {
     case text(String)
     case thinking(content: String, isFinished: Bool)
     case toolCall(name: String, status: ToolStatus, description: String)
+    case file(url: String, name: String)
+    case choice(question: String, options: [String])
 }
 
 struct OldAgentState: Equatable {

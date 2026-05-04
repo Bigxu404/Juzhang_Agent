@@ -4,13 +4,19 @@ enum AppTheme {
     // MARK: - Colors (基于设计规范)
     
     /// BG / 背景底色 (奶油雾白)
-    static let bgBase = Color(red: 247/255, green: 244/255, blue: 239/255)
+    static let bgBase = Color(red: 251/255, green: 245/255, blue: 233/255)
+    
+    /// TabBar 背景色 (提取自切图背景)
+    static let tabBg = Color(red: 251/255, green: 245/255, blue: 233/255)
     
     /// Surface-1 / 卡片底 (纯白)
     static let surface1 = Color.white
     
     /// Surface-2 / 次级底 (更暖的浅底)
     static let surface2 = Color(red: 251/255, green: 247/255, blue: 241/255)
+    
+    /// Input Bg / 输入框底色
+    static let inputBg = Color(red: 238/255, green: 232/255, blue: 218/255)
     
     /// Text-Primary (深暖灰)
     static let textPrimary = Color(red: 31/255, green: 35/255, blue: 40/255)

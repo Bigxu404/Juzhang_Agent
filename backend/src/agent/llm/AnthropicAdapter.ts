@@ -13,7 +13,8 @@ export class AnthropicAdapter implements LLMAdapter {
     messages: LLMMessage[], 
     tools: Tool[], 
     modelName: string, 
-    onChunk?: (text: string) => Promise<void>
+    onChunk?: (text: string) => Promise<void>,
+    signal?: AbortSignal
   ): Promise<LLMResponse> {
     const anthropicTools = tools.map(t => ({
       name: t.name,
@@ -35,7 +36,7 @@ export class AnthropicAdapter implements LLMAdapter {
       system: systemMsg,
       messages: filteredMessages as any,
       tools: anthropicTools.length > 0 ? (anthropicTools as any) : undefined
-    });
+    }, { signal });
 
     const tcRaw = response.content.filter((c: any) => c.type === 'tool_use');
     const texts = response.content.filter((c: any) => c.type === 'text');

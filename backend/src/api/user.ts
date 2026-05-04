@@ -12,7 +12,7 @@ userRouter.get('/me', async (req, res) => {
 
     const user = await prisma.user.findUnique({
       where: { id: userId },
-      select: { id: true, username: true, apiKey: true, modelName: true }
+      select: { id: true, username: true, apiKey: true, modelName: true, subModelName: true }
     });
     res.json(user);
   } catch (err: any) {
@@ -26,16 +26,17 @@ userRouter.put('/config', async (req, res) => {
     const userId = (req as any).userId;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
 
-    const { apiKey, modelName } = req.body;
-    const normalizedModelName = normalizeModelName(modelName);
+    const { apiKey, modelName, subModelName } = req.body;
+    
+    const dataToUpdate: any = {};
+    if (apiKey !== undefined) dataToUpdate.apiKey = apiKey;
+    if (modelName !== undefined) dataToUpdate.modelName = normalizeModelName(modelName);
+    if (subModelName !== undefined) dataToUpdate.subModelName = normalizeModelName(subModelName);
     
     const updatedUser = await prisma.user.update({
       where: { id: userId },
-      data: {
-        apiKey: apiKey !== undefined ? apiKey : undefined,
-        modelName: modelName !== undefined ? normalizedModelName : undefined
-      },
-      select: { id: true, username: true, apiKey: true, modelName: true }
+      data: dataToUpdate,
+      select: { id: true, username: true, apiKey: true, modelName: true, subModelName: true }
     });
 
     res.json(updatedUser);

@@ -28,9 +28,12 @@ export interface AgentContext {
   apiKey?: string;
   modelName?: string;
   requestPermission: (toolName: string, desc: string) => Promise<boolean>;
+  askHuman: (question: string, options?: string[]) => Promise<string>;
   sendState: (status: AgentState | string, desc: string) => void;
   sendChunk: (text: string) => Promise<void>;
   sendEvent: (event: AgentEvent) => void;
   history: any[];
   trace?: Trace;
+  signal?: AbortSignal;
+  currentAttachments?: string[];
 }

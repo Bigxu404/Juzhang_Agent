@@ -12,6 +12,8 @@ import { runAgent } from './agent/runAgent';
 import { AgentContext } from './types';
 import { authRouter } from './api/auth';
 import { userRouter } from './api/user';
+import { filesRouter } from './api/files';
+import path from 'path';
 import { prisma } from './utils/db';
 import { sessionMutex } from './utils/mutex';
 import jwt from 'jsonwebtoken';
@@ -59,6 +61,8 @@ const authMiddleware = (req: express.Request, res: express.Response, next: expre
 // 挂载鉴权路由
 app.use('/api/auth', authRouter);
 app.use('/api/user', authMiddleware, userRouter);
+app.use('/api/files', authMiddleware, filesRouter);
+app.use('/uploads', express.static(path.join(__dirname, '../../uploads')));
 
 // Task 4.3.2 & 4.3.3: 离线发送接口与 APNs 占位
 app.post('/api/share/ingest', async (req, res) => {
@@ -90,13 +94,24 @@ dispatcher.register(AppendNotionBlockTool);
 dispatcher.register(DelegateToExploreAgentTool);
 dispatcher.register(AskClarificationTool);
 
-// Task 2.2: MCP Integration
-const mcpManager = new McpClientManager(dispatcher);
+// 核心 MCP Servers 接入 (Memory, Fetch, Sequential-Thinking)
+const mcpMemory = new McpClientManager(dispatcher);
+mcpMemory.connect('npx', ['-y', '@modelcontextprotocol/server-memory']).catch(console.error);
+
+const mcpFetch = new McpClientManager(dispatcher);
+mcpFetch.connect('npx', ['-y', '@modelcontextprotocol/server-fetch']).catch(console.error);
+
+const mcpSequentialThinking = new McpClientManager(dispatcher);
+mcpSequentialThinking.connect('npx', ['-y', '@modelcontextprotocol/server-sequential-thinking']).catch(console.error);
+
+const mcpOffice = new McpClientManager(dispatcher);
+mcpOffice.connect('npx', ['-y', '@mhackermsft/officemcp']).catch(console.error);
+
+// Task 2.2: MCP Integration (Notion 遗留配置)
+const mcpNotion = new McpClientManager(dispatcher);
 if (process.env.NOTION_MCP_COMMAND) {
-  // e.g. NOTION_MCP_COMMAND="node"
-  // e.g. NOTION_MCP_ARGS="/path/to/mcp-server-notion/build/index.js arg1"
   const args = process.env.NOTION_MCP_ARGS ? process.env.NOTION_MCP_ARGS.split(' ') : [];
-  mcpManager.connect(process.env.NOTION_MCP_COMMAND, args).catch(console.error);
+  mcpNotion.connect(process.env.NOTION_MCP_COMMAND, args).catch(console.error);
 } else {
   console.log('[Server] NOTION_MCP_COMMAND not provided in .env, using mock Notion tools.');
 }
@@ -151,7 +166,7 @@ io.on('connection', async (socket: Socket) => {
     if (msg.role === 'assistant' && msg.toolCalls) {
       return {
         role: msg.role,
-        content: msg.content,
+        content: "", // 优化二：丢弃工具调用的伴随废话，极省 Token
         tool_calls: JSON.parse(msg.toolCalls)
       };
     } else if (msg.role === 'tool' && msg.toolCalls) {
@@ -167,6 +182,7 @@ io.on('connection', async (socket: Socket) => {
     };
   });
 
+  const sessionAbortControllers = new Map<string, AbortController>();
   let pendingPermissionResolve: ((approved: boolean) => void) | null = null;
 
   const ctx: AgentContext = {
@@ -180,12 +196,20 @@ io.on('connection', async (socket: Socket) => {
         pendingPermissionResolve = resolve;
       });
     },
+    askHuman: async (question: string, options?: string[]) => {
+      socket.emit('AGENT_ASK_HUMAN', { question, options });
+      return new Promise<string>((resolve) => {
+        // Here we reuse pendingPermissionResolve or define a new one. For simplicity, we define a new global scoped resolver pattern
+        (socket as any).pendingHumanResponseResolve = resolve;
+      });
+    },
     sendState: (status: AgentState | string, desc: string) => {
       socket.emit('AGENT_STATE', { status, description: desc });
     },
     sendChunk: async (text: string) => {
       const chars = Array.from(text);
       for (const char of chars) {
+        if (ctx.signal?.aborted) throw new Error("AbortError");
         socket.emit('CHUNK', { text: char });
         let delay = 30;
         if (['，', '。', '！', '？', '；', '：', ',', '.', '!', '?', ';', ':'].includes(char)) {
@@ -209,9 +233,49 @@ io.on('connection', async (socket: Socket) => {
     socket.emit('SESSION_LOADED', { messages: history });
   }
 
-  socket.on('MESSAGE', async (payload: { content: string, attachments?: any[] }) => {
-    console.log(`[WS] Received MESSAGE from ${user.username}:`, payload.content);
+  socket.on('MESSAGE', async (payload: { content: string, attachments?: string[] }) => {
+    console.log(`[WS] Received MESSAGE from ${user.username}:`, payload.content, payload.attachments);
     
+    // Create new abort controller for this run
+    const abortController = new AbortController();
+    sessionAbortControllers.set(session!.id, abortController);
+    ctx.signal = abortController.signal;
+
+    // 解析附件对应的本地路径
+    let localFilePaths: string[] = [];
+    if (payload.attachments && payload.attachments.length > 0) {
+      const files = await prisma.file.findMany({
+        where: { url: { in: payload.attachments } }
+      });
+      localFilePaths = files.map(f => f.localPath);
+    }
+    ctx.currentAttachments = localFilePaths;
+    
+    // 优化三：防御性修补（修复被意外中断的孤立 tool_call 导致 API 报错 400）
+    if (ctx.history.length > 0) {
+      const lastMsg = ctx.history[ctx.history.length - 1];
+      if (lastMsg.role === 'assistant' && lastMsg.tool_calls && lastMsg.tool_calls.length > 0) {
+        console.log(`[WS] 检测到上次生成被中断留下孤立 tool_calls，注入防报错结果`);
+        const syntheticToolResult = {
+          role: 'tool',
+          tool_call_id: lastMsg.tool_calls[0].id,
+          content: '{"error": "工具执行被用户强行中断"}'
+        };
+        ctx.history.push(syntheticToolResult);
+        
+        await sessionMutex.runExclusive(session!.id, async () => {
+          await prisma.message.create({
+            data: {
+              sessionId: session!.id,
+              role: 'tool',
+              content: syntheticToolResult.content,
+              toolCalls: JSON.stringify({ id: syntheticToolResult.tool_call_id })
+            }
+          });
+        });
+      }
+    }
+
     // 保存用户消息到数据库
     await sessionMutex.runExclusive(session!.id, async () => {
       await prisma.message.create({
@@ -224,9 +288,25 @@ io.on('connection', async (socket: Socket) => {
     });
 
     // Call the Agent ReAct loop
-    await runAgent(payload.content, dispatcher, ctx);
-    
-    socket.emit('AGENT_STATE', { status: AgentState.IDLE, description: '等待输入...' });
+    try {
+      await runAgent(payload.content, dispatcher, ctx);
+    } catch (e: any) {
+      if (e.message === "AbortError" || e.name === "AbortError") {
+        console.log(`[WS] Generation aborted by user ${user.username}`);
+      }
+    } finally {
+      sessionAbortControllers.delete(session!.id);
+      socket.emit('AGENT_STATE', { status: AgentState.IDLE, description: '等待输入...' });
+      socket.emit('AGENT_EVENT', { type: 'DONE' }); // 通知前端流程结束
+    }
+  });
+
+  socket.on('STOP_GENERATION', () => {
+    console.log(`[WS] Received STOP_GENERATION from ${user.username}`);
+    const controller = sessionAbortControllers.get(session!.id);
+    if (controller) {
+      controller.abort();
+    }
   });
 
   socket.on('CLEAR_CHAT', async () => {
@@ -240,7 +320,7 @@ io.on('connection', async (socket: Socket) => {
     ctx.sessionId = session.id;
     ctx.history.length = 0;
     socket.emit('AGENT_STATE', { status: AgentState.IDLE, description: 'Agent is ready.' });
-    socket.emit('CHUNK', { text: `你好，${user.username}！这是全新的对话，有什么我可以帮你的吗？` });
+    // Removed the "Hello, this is a new conversation" default message
   });
 
   socket.on('GET_SESSIONS', async () => {
@@ -268,7 +348,7 @@ io.on('connection', async (socket: Socket) => {
 
       ctx.history = dbMessages.map(msg => {
         if (msg.role === 'assistant' && msg.toolCalls) {
-          return { role: msg.role, content: msg.content, tool_calls: JSON.parse(msg.toolCalls) };
+          return { role: msg.role, content: "", tool_calls: JSON.parse(msg.toolCalls) }; // 优化二：丢弃伴随废话
         } else if (msg.role === 'tool' && msg.toolCalls) {
           return { role: msg.role, content: msg.content, tool_call_id: JSON.parse(msg.toolCalls).id };
         }
@@ -284,6 +364,14 @@ io.on('connection', async (socket: Socket) => {
     if (pendingPermissionResolve) {
       pendingPermissionResolve(payload.action === 'ALLOW');
       pendingPermissionResolve = null;
+    }
+  });
+
+  socket.on('HUMAN_ANSWER', (payload: { answer: string }) => {
+    console.log(`[WS] Received HUMAN_ANSWER from ${socket.id}: ${payload.answer}`);
+    if ((socket as any).pendingHumanResponseResolve) {
+      (socket as any).pendingHumanResponseResolve(payload.answer);
+      (socket as any).pendingHumanResponseResolve = null;
     }
   });
 

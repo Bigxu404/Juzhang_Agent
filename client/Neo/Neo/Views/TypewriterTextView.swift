@@ -10,7 +10,7 @@ struct TypewriterTextView: View {
     @State private var timer: Timer?
     
     var body: some View {
-        Text(displayedText)
+        Text(LocalizedStringKey(displayedText))
             .font(.system(size: 16, weight: .regular))
             .foregroundColor(isUser ? .white : AppTheme.textPrimary)
             .lineSpacing(4)

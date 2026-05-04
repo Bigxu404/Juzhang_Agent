@@ -18,7 +18,8 @@ export interface LLMAdapter {
     messages: LLMMessage[], 
     tools: Tool[], 
     modelName: string, 
-    onChunk?: (text: string) => Promise<void>
+    onChunk?: (text: string) => Promise<void>,
+    signal?: AbortSignal
   ): Promise<LLMResponse>;
 
   formatToolResult(toolCallId: string, result: string): LLMMessage;

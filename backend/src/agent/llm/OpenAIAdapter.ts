@@ -13,7 +13,8 @@ export class OpenAIAdapter implements LLMAdapter {
     messages: LLMMessage[], 
     tools: Tool[], 
     modelName: string, 
-    onChunk?: (text: string) => Promise<void>
+    onChunk?: (text: string) => Promise<void>,
+    signal?: AbortSignal
   ): Promise<LLMResponse> {
     const openaiTools = tools.map(t => ({
       type: 'function',
@@ -62,7 +63,7 @@ export class OpenAIAdapter implements LLMAdapter {
       messages: openaiMessages as any,
       tools: openaiTools.length > 0 ? (openaiTools as any) : undefined,
       stream: true,
-    });
+    }, { signal });
 
     let fullText = "";
     let toolCallsRaw: any[] = [];
@@ -105,7 +106,15 @@ export class OpenAIAdapter implements LLMAdapter {
       }
     }
 
-    return { text: fullText, toolCalls, rawResponse: { content: fullText, tool_calls: toolCallsRaw.length > 0 ? toolCallsRaw : undefined } };
+    return { 
+        text: fullText, 
+        toolCalls, 
+        rawResponse: { 
+            role: 'assistant', 
+            content: fullText, 
+            tool_calls: toolCallsRaw.length > 0 ? toolCallsRaw : undefined 
+        } 
+    };
   }
 
   formatToolResult(toolCallId: string, result: string): LLMMessage {
