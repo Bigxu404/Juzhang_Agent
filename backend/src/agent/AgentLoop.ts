@@ -82,12 +82,32 @@ export class AgentLoop {
           const resultStr = await this.dispatcher.dispatch(name, input, this.ctx);
           const duration = Date.now() - startTime;
           
+          let isError = false;
+          try {
+            const parsedResult = JSON.parse(resultStr);
+            if (parsedResult && parsedResult.error) {
+              isError = true;
+            }
+          } catch (err) {
+            // Not JSON, assume not our structured error
+          }
+
           // Debug Mode: 发送调用结果卡片到前端
-          const debugEnd = `\n<tool>【调用链路监控】执行完毕\n状态: 成功\n耗时: ${duration}ms\n返回预览: \n${resultStr.length > 500 ? resultStr.substring(0, 500) + "..." : resultStr}</tool>\n`;
+          const debugEnd = `\n<tool>【调用链路监控】执行完毕\n状态: ${isError ? '失败' : '成功'}\n耗时: ${duration}ms\n返回预览: \n${resultStr.length > 500 ? resultStr.substring(0, 500) + "..." : resultStr}</tool>\n`;
           await this.ctx.sendChunk(debugEnd);
           finalResponseStr += debugEnd;
           
           messages.push(activeAdapter.formatToolResult(id, resultStr));
+
+          // 强制反思机制 (Reflection)
+          if (isError) {
+            const reflectionPrompt = `系统提示：你刚才调用的工具 \`${name}\` 执行失败。报错信息如上所示。
+在进行下一次尝试之前，你必须先输出一段 \`<reflection>\`（反思），明确写出：
+1. 为什么会报错？
+2. 你打算怎么修改参数或调用其他工具来解决这个问题？
+只有在完成反思后，你才能再次调用工具。`;
+            messages.push({ role: 'user', content: reflectionPrompt });
+          }
         }
       } catch (e: any) {
         llmSpan?.end({ error: e.message });

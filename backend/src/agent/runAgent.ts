@@ -57,7 +57,7 @@ export async function runAgent(
     const agentLoop = new AgentLoop([primaryAdapter, fallbackAdapter], dispatcher, ctx, maxSteps);
     const { finalResponseStr, finalToolCalls } = await agentLoop.run(messages, modelName);
 
-    // Save ALL new messages (assistant and tool results) to DB
+    // Save ALL new messages (assistant and tool results) to DB and update ctx.history
     await sessionMutex.runExclusive(ctx.sessionId, async () => {
       const newMessages = messages.slice(initialMessagesLength);
       for (const msg of newMessages) {
@@ -77,6 +77,13 @@ export async function runAgent(
 
         // 防止某些大模型返回的 role 为 undefined
         const safeRole = msg.role ? String(msg.role) : 'assistant';
+        
+        ctx.history.push({
+            role: safeRole,
+            content: contentStr,
+            tool_calls: msg.tool_calls,
+            tool_call_id: msg.tool_call_id
+        });
 
         await prisma.message.create({
           data: {

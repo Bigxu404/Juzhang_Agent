@@ -30,12 +30,6 @@ export class PromptBuilder {
 
     const systemMsg = systemPromptBlocks.map((b: any) => b.text).join('\n\n');
 
-    let finalQuery = query;
-    if (this.ctx.currentAttachments && this.ctx.currentAttachments.length > 0) {
-      finalQuery += `\n\n[系统通知] 用户刚刚发送了 ${this.ctx.currentAttachments.length} 个附件，已安全存放到你的宿主机本地。你可以直接调用文件或办公相关的 MCP 工具读取处理它们。文件绝对路径如下：\n` + 
-      this.ctx.currentAttachments.join('\n');
-    }
-
     const messages: LLMMessage[] = [
       { role: 'system', content: systemMsg },
       ...this.ctx.history.map(m => {
@@ -46,9 +40,21 @@ export class PromptBuilder {
               tool_calls: m.tool_calls,
               tool_call_id: m.tool_call_id
           } as LLMMessage;
-      }),
-      { role: 'user', content: finalQuery }
+      })
     ];
+
+    // If the last message in history is the user query, we might want to append attachments to it
+    // But since we just pushed the user message to history in server.ts, it's already there.
+    // Let's find the last user message and append the attachment info to it.
+    if (this.ctx.currentAttachments && this.ctx.currentAttachments.length > 0) {
+      for (let i = messages.length - 1; i >= 0; i--) {
+        if (messages[i].role === 'user') {
+          messages[i].content += `\n\n[系统通知] 用户刚刚发送了 ${this.ctx.currentAttachments.length} 个附件，已安全存放到你的宿主机本地。你可以直接调用文件或办公相关的 MCP 工具读取处理它们。文件绝对路径如下：\n` + 
+          this.ctx.currentAttachments.join('\n');
+          break;
+        }
+      }
+    }
 
     return messages;
   }

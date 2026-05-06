@@ -95,6 +95,9 @@ dispatcher.register(DelegateToExploreAgentTool);
 dispatcher.register(AskClarificationTool);
 
 // 核心 MCP Servers 接入 (Memory, Fetch, Sequential-Thinking)
+const mcpFilesystem = new McpClientManager(dispatcher);
+mcpFilesystem.connect('npx', ['-y', '@modelcontextprotocol/server-filesystem', '/Users/azhang/移动Agent/Juzhang_Agent/client/Neo/Neo/Assets.xcassets', '/Users/azhang/移动Agent/Juzhang_Agent']).catch(console.error);
+
 const mcpMemory = new McpClientManager(dispatcher);
 mcpMemory.connect('npx', ['-y', '@modelcontextprotocol/server-memory']).catch(console.error);
 
@@ -277,6 +280,8 @@ io.on('connection', async (socket: Socket) => {
     }
 
     // 保存用户消息到数据库
+    const userMsg = { role: 'user', content: payload.content };
+    ctx.history.push(userMsg);
     await sessionMutex.runExclusive(session!.id, async () => {
       await prisma.message.create({
         data: {
